@@ -1,0 +1,26 @@
+# Node / Next
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Expo / RN
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# Generated audio (ephemeral in /tmp, but ignore any local copies)
+*.mp3
+*.wav

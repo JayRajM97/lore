@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Lore",
+    "slug": "lore",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FAFAF8",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lore.playground"
+    },
+    "android": {
+      "package": "com.lore.playground"
+    },
+    "splash": {
+      "backgroundColor": "#FAFAF8"
+    }
+  }
+}

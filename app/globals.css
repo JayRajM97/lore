@@ -1,0 +1,25 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#__next {
+  height: 100%;
+}
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+}
+
+.label {
+  @apply text-[12px] font-medium uppercase tracking-[0.06em] text-muted;
+}
+
+/* skeleton shimmer surface -> border */
+.shimmer {
+  background: linear-gradient(90deg, #f1efe8 25%, #d3d1c7 50%, #f1efe8 75%);
+  background-size: 200% 100%;
+}
