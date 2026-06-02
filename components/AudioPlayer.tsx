@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { mmss, truncate } from "@/lib/format";
 import StatsBar, { GenStats } from "./StatsBar";
+
+export interface AudioHandle {
+  getAudio: () => HTMLAudioElement | null;
+}
 
 const SPEEDS = [0.75, 1, 1.5, 2];
 
@@ -18,17 +28,15 @@ interface Props {
   generating: boolean;
   sidecarUp: boolean | null; // null = unknown/checking
   onProgress?: (current: number, duration: number) => void; // drives word sync
+  onToggleLyrics?: () => void; // open the Spotify-style lyrics view
 }
 
-export default function AudioPlayer({
-  audioUrl,
-  title,
-  stats,
-  generating,
-  sidecarUp,
-  onProgress,
-}: Props) {
+const AudioPlayer = forwardRef<AudioHandle, Props>(function AudioPlayer(
+  { audioUrl, title, stats, generating, sidecarUp, onProgress, onToggleLyrics },
+  ref
+) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  useImperativeHandle(ref, () => ({ getAudio: () => audioRef.current }), []);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -212,8 +220,18 @@ export default function AudioPlayer({
           })}
         </div>
 
-        {/* download */}
-        <div className="mt-5 flex justify-end">
+        {/* lyrics + download */}
+        <div className="mt-5 flex justify-between">
+          {onToggleLyrics ? (
+            <button
+              onClick={onToggleLyrics}
+              className="flex items-center gap-1.5 rounded-btn border-[0.5px] border-border px-3 py-1.5 text-[13px] text-teal hover:bg-teal50"
+            >
+              <LyricsIcon /> Lyrics
+            </button>
+          ) : (
+            <span />
+          )}
           <a
             href={audioUrl}
             download="lore.mp3"
@@ -227,7 +245,9 @@ export default function AudioPlayer({
       </div>
     </Centered>
   );
-}
+});
+
+export default AudioPlayer;
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
@@ -258,6 +278,15 @@ function PauseIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
       <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+    </svg>
+  );
+}
+
+// Spotify-style "lyrics" glyph (quote/mic-ish lines).
+function LyricsIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M4 7h11M4 12h16M4 17h9" />
     </svg>
   );
 }

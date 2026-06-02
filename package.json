@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:preprocess": "tsc lib/preprocessNewsletter.ts lib/preprocessNewsletter.test.ts --outDir /tmp/lore-test --module commonjs --target es2020 --esModuleInterop --skipLibCheck && node /tmp/lore-test/preprocessNewsletter.test.js"
+    "test:preprocess": "tsc lib/preprocessNewsletter.ts lib/preprocessNewsletter.test.ts --outDir /tmp/lore-test --module commonjs --target es2020 --esModuleInterop --skipLibCheck && node /tmp/lore-test/preprocessNewsletter.test.js",
+    "test:lines": "tsc lib/lines.ts lib/lines.test.ts --outDir /tmp/lore-lines --module commonjs --target es2020 --esModuleInterop --skipLibCheck && node /tmp/lore-lines/lines.test.js"
   },
   "dependencies": {
     "next": "14.2.5",

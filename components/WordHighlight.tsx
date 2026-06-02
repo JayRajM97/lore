@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import type { WordTs } from "@/lib/lines";
 
-export interface WordTs {
-  start: number;
-  end: number;
-}
+export type { WordTs };
 
 interface Props {
   text: string;

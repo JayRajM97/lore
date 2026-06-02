@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TextInput from "@/components/TextInput";
-import AudioPlayer from "@/components/AudioPlayer";
+import AudioPlayer, { AudioHandle } from "@/components/AudioPlayer";
 import WordHighlight, { WordTs } from "@/components/WordHighlight";
+import WordSyncView from "@/components/WordSyncView";
 import { GenStats } from "@/components/StatsBar";
 import { DEFAULT_VOICE } from "@/lib/voices";
 
@@ -21,6 +22,9 @@ export default function Home() {
 
   const [wordSync, setWordSync] = useState(true); // default ON
   const [progress, setProgress] = useState({ current: 0, duration: 0 });
+
+  const [lyricsOpen, setLyricsOpen] = useState(false);
+  const playerRef = useRef<AudioHandle>(null);
 
   // Poll sidecar health on mount + every 10s.
   useEffect(() => {
@@ -111,15 +115,26 @@ export default function Home() {
         {/* Right — player */}
         <section className="h-full w-1/2 bg-surface">
           <AudioPlayer
+            ref={playerRef}
             audioUrl={audioUrl}
             title={syncedText}
             stats={stats}
             generating={generating}
             sidecarUp={sidecarUp}
             onProgress={(current, duration) => setProgress({ current, duration })}
+            onToggleLyrics={audioUrl ? () => setLyricsOpen(true) : undefined}
           />
         </section>
       </div>
+
+      <WordSyncView
+        open={lyricsOpen}
+        text={syncedText}
+        duration={progress.duration}
+        words={wordTs}
+        getAudio={() => playerRef.current?.getAudio() ?? null}
+        onClose={() => setLyricsOpen(false)}
+      />
 
       {toast && (
         <div className="fixed bottom-6 right-6 rounded-card bg-coral px-4 py-3 text-[13px] text-coral50 shadow-lg">

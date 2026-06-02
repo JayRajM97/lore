@@ -23,3 +23,12 @@ body {
   background: linear-gradient(90deg, #f1efe8 25%, #d3d1c7 50%, #f1efe8 75%);
   background-size: 200% 100%;
 }
+
+/* hide scrollbar (lyrics view) but keep scrollability */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
