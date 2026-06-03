@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Audio, AVPlaybackStatus } from "expo-av";
-import { SIDECAR_URL } from "./config";
+import { SIDECAR_URL } from "../config";
 
 const DEFAULT_DESCRIPTION =
   "Realistic male voice in the 30s with american accent. Normal pitch, warm timbre, conversational pacing.";

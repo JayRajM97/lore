@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { activeWordIndex } from "@/lib/lines";
 import type { WordTs } from "@/lib/lines";
 
 export type { WordTs };
@@ -42,12 +43,8 @@ export default function WordHighlight({ text, current, duration, words }: Props)
   // Ordinal index (0-based) of the active WORD, counting words only.
   const activeOrdinal = useMemo(() => {
     if (words && words.length > 0) {
-      // real timestamps — authoritative
-      if (current <= words[0].start) return current > 0 ? 0 : -1;
-      for (let j = 0; j < words.length; j++) {
-        if (current >= words[j].start && current < words[j].end) return j;
-      }
-      return words.length - 1; // past the end
+      // real timestamps — last word started by now (+lead), robust over gaps
+      return activeWordIndex(words, current);
     }
     // linear fallback
     const frac = duration > 0 ? Math.min(current / duration, 1) : 0;

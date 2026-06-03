@@ -11,7 +11,8 @@ interface Props {
   onTextChange: (v: string) => void;
   onVoiceChange: (v: string) => void;
   generating: boolean;
-  generatedSeconds: number | null; // last generation time in s, for the ⚡ pill
+  genElapsed: number | null;  // live counter while generating (seconds, updates at 50ms)
+  generatedSeconds: number | null; // final time after done, for the ⚡ pill
   onGenerate: () => void;
 }
 
@@ -21,6 +22,7 @@ export default function TextInput({
   onTextChange,
   onVoiceChange,
   generating,
+  genElapsed,
   generatedSeconds,
   onGenerate,
 }: Props) {
@@ -91,7 +93,16 @@ export default function TextInput({
           shake ? "animate-shake" : ""
         }`}
       >
-        {generating ? "Generating…" : "Convert to Audio"}
+        {generating ? (
+          <span className="flex items-center justify-center gap-2">
+            <span>Generating</span>
+            {genElapsed != null && (
+              <span className="font-mono text-teal50/80">
+                {genElapsed.toFixed(1)}s
+              </span>
+            )}
+          </span>
+        ) : "Convert to Audio"}
       </button>
 
       {generatedSeconds != null && !generating && (

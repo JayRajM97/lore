@@ -2,19 +2,25 @@
   "expo": {
     "name": "Lore",
     "slug": "lore",
+    "scheme": "lore",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FAFAF8",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lore.playground"
+      "bundleIdentifier": "com.lore.app"
     },
     "android": {
-      "package": "com.lore.playground"
+      "package": "com.lore.app"
     },
     "splash": {
-      "backgroundColor": "#FAFAF8"
+      "backgroundColor": "#FAFAF8",
+      "resizeMode": "contain"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": false
     }
   }
 }

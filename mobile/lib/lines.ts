@@ -5,10 +5,8 @@
 // per-word timestamps are available (Kokoro), line starts snap to them for
 // accurate tap-to-seek; otherwise it falls back to word-count linear interp.
 
-export interface WordTs {
-  start: number;
-  end: number;
-}
+import type { WordTs } from "./types";
+export type { WordTs };
 
 export type LineKind = "normal" | "header" | "image" | "pause";
 
@@ -19,11 +17,6 @@ export interface ScriptLine {
   start_time: number;
   end_time: number;
   tappable: boolean;
-  // ordinal of this line's first spoken word among ALL spoken words, and how
-  // many words it holds — lets the rail map an active word to its line + the
-  // word's position within the line. -1/0 for non-spoken (pause/image) lines.
-  wordStart: number;
-  wordCount: number;
 }
 
 const PAUSE_S = 0.5; // silence allocated to a [pause] / image chip
@@ -124,11 +117,8 @@ export function buildLines(
   const perWord = spokenWords > 0 ? remaining / spokenWords : 0;
 
   let t = 0;
-  let spokenOrdinal = 0; // running count of spoken words across lines
   const lines: ScriptLine[] = raw.map((l, index) => {
-    const spoken = l.kind === "normal" || l.kind === "header";
-    const n = spoken ? wc(l.text) : 0;
-    const dur = l.kind === "pause" || l.kind === "image" ? PAUSE_S : n * perWord;
+    const dur = l.kind === "pause" || l.kind === "image" ? PAUSE_S : wc(l.text) * perWord;
     const line: ScriptLine = {
       index,
       text: l.text,
@@ -136,10 +126,7 @@ export function buildLines(
       start_time: t,
       end_time: t + dur,
       tappable: l.kind === "normal",
-      wordStart: spoken ? spokenOrdinal : -1,
-      wordCount: n,
     };
-    if (spoken) spokenOrdinal += n;
     t += dur;
     return line;
   });
@@ -170,35 +157,6 @@ export function buildLines(
   }
 
   return lines;
-}
-
-// 0.18s covers audio-output latency. MP3 encoding + HTTP streaming adds
-// another ~0.8–1.2s of buffering, so the effective lead must be ~1.0s.
-export const HIGHLIGHT_LEAD_S = 1.0;
-
-// Index of the active WORD = the last word that has started by `current`
-// (+lead). Robust across inter-word gaps and silences, unlike a strict
-// [start,end) test which falls through during breaths. -1 before the first.
-export function activeWordIndex(
-  words: WordTs[],
-  current: number,
-  lead = HIGHLIGHT_LEAD_S
-): number {
-  const t = current + lead;
-  if (words.length === 0 || t < words[0].start) return -1;
-  let lo = 0;
-  let hi = words.length - 1;
-  let ans = 0;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (words[mid].start <= t) {
-      ans = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return ans;
 }
 
 // Active line index for a given playback time (binary-ish linear scan).

@@ -9,6 +9,8 @@ import {
 } from "react";
 import { mmss, truncate } from "@/lib/format";
 import StatsBar, { GenStats } from "./StatsBar";
+import LyricsRail from "./LyricsRail";
+import type { WordTs } from "@/lib/lines";
 
 export interface AudioHandle {
   getAudio: () => HTMLAudioElement | null;
@@ -27,12 +29,12 @@ interface Props {
   stats: GenStats | null;
   generating: boolean;
   sidecarUp: boolean | null; // null = unknown/checking
+  words?: WordTs[] | null; // per-word timestamps for the inline lyrics rail
   onProgress?: (current: number, duration: number) => void; // drives word sync
-  onToggleLyrics?: () => void; // open the Spotify-style lyrics view
 }
 
 const AudioPlayer = forwardRef<AudioHandle, Props>(function AudioPlayer(
-  { audioUrl, title, stats, generating, sidecarUp, onProgress, onToggleLyrics },
+  { audioUrl, title, stats, generating, sidecarUp, words, onProgress },
   ref
 ) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -150,23 +152,33 @@ const AudioPlayer = forwardRef<AudioHandle, Props>(function AudioPlayer(
           onEnded={() => setPlaying(false)}
         />
 
-        {/* waveform — bars fill amber up to the playhead; gently wave while playing */}
-        <div className="flex h-24 items-end justify-center gap-[3px]">
-          {BARS.map((h, i) => {
-            const active = i / BARS.length <= progress;
-            return (
-              <div
-                key={i}
-                style={{ height: `${h}%`, animationDelay: `${(i % 8) * 0.07}s` }}
-                className={`w-[3px] origin-bottom rounded-pill ${
-                  active ? "bg-amber" : "bg-border"
-                } ${playing ? "animate-wave" : ""}`}
-              />
-            );
-          })}
-        </div>
+        {/* lyrics rail (line + word highlight) sits right above the player.
+            Falls back to the waveform when there are no timestamps yet. */}
+        {words && words.length > 0 && title.trim() ? (
+          <LyricsRail
+            text={title}
+            duration={duration}
+            words={words}
+            getAudio={() => audioRef.current}
+          />
+        ) : (
+          <div className="flex h-24 items-end justify-center gap-[3px]">
+            {BARS.map((h, i) => {
+              const active = i / BARS.length <= progress;
+              return (
+                <div
+                  key={i}
+                  style={{ height: `${h}%`, animationDelay: `${(i % 8) * 0.07}s` }}
+                  className={`w-[3px] origin-bottom rounded-pill ${
+                    active ? "bg-amber" : "bg-border"
+                  } ${playing ? "animate-wave" : ""}`}
+                />
+              );
+            })}
+          </div>
+        )}
 
-        <h2 className="mt-6 truncate text-center text-[15px] font-medium text-ink">
+        <h2 className="mt-5 truncate text-center text-[15px] font-medium text-ink">
           {truncate(title, 60)}
         </h2>
 
@@ -220,18 +232,8 @@ const AudioPlayer = forwardRef<AudioHandle, Props>(function AudioPlayer(
           })}
         </div>
 
-        {/* lyrics + download */}
-        <div className="mt-5 flex justify-between">
-          {onToggleLyrics ? (
-            <button
-              onClick={onToggleLyrics}
-              className="flex items-center gap-1.5 rounded-btn border-[0.5px] border-border px-3 py-1.5 text-[13px] text-teal hover:bg-teal50"
-            >
-              <LyricsIcon /> Lyrics
-            </button>
-          ) : (
-            <span />
-          )}
+        {/* download */}
+        <div className="mt-5 flex justify-end">
           <a
             href={audioUrl}
             download="lore.mp3"
@@ -282,11 +284,3 @@ function PauseIcon() {
   );
 }
 
-// Spotify-style "lyrics" glyph (quote/mic-ish lines).
-function LyricsIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M4 7h11M4 12h16M4 17h9" />
-    </svg>
-  );
-}

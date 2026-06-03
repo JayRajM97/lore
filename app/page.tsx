@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import TextInput from "@/components/TextInput";
 import AudioPlayer, { AudioHandle } from "@/components/AudioPlayer";
 import WordHighlight, { WordTs } from "@/components/WordHighlight";
-import WordSyncView from "@/components/WordSyncView";
 import { GenStats } from "@/components/StatsBar";
 import { DEFAULT_VOICE } from "@/lib/voices";
 
@@ -23,8 +22,24 @@ export default function Home() {
   const [wordSync, setWordSync] = useState(true); // default ON
   const [progress, setProgress] = useState({ current: 0, duration: 0 });
 
-  const [lyricsOpen, setLyricsOpen] = useState(false);
   const playerRef = useRef<AudioHandle>(null);
+
+  // Live generation timer (hundredths of a second).
+  const [genElapsed, setGenElapsed] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerStart = useRef(0);
+
+  const startTimer = useCallback(() => {
+    timerStart.current = Date.now();
+    setGenElapsed(0);
+    timerRef.current = setInterval(() => {
+      setGenElapsed((Date.now() - timerStart.current) / 1000);
+    }, 50);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  }, []);
 
   // Poll sidecar health on mount + every 10s.
   useEffect(() => {
@@ -48,6 +63,8 @@ export default function Home() {
 
   async function handleGenerate() {
     setGenerating(true);
+    setGenElapsed(null);
+    startTimer();
     setToast(null);
     try {
       const res = await fetch("/api/generate", {
@@ -69,6 +86,7 @@ export default function Home() {
       console.error(e);
       setToast("Generation failed. Check console.");
     } finally {
+      stopTimer();
       setGenerating(false);
     }
   }
@@ -106,6 +124,7 @@ export default function Home() {
               onTextChange={setText}
               onVoiceChange={setVoice}
               generating={generating}
+              genElapsed={genElapsed}
               generatedSeconds={stats ? stats.generation_time_ms / 1000 : null}
               onGenerate={handleGenerate}
             />
@@ -121,20 +140,11 @@ export default function Home() {
             stats={stats}
             generating={generating}
             sidecarUp={sidecarUp}
+            words={wordTs}
             onProgress={(current, duration) => setProgress({ current, duration })}
-            onToggleLyrics={audioUrl ? () => setLyricsOpen(true) : undefined}
           />
         </section>
       </div>
-
-      <WordSyncView
-        open={lyricsOpen}
-        text={syncedText}
-        duration={progress.duration}
-        words={wordTs}
-        getAudio={() => playerRef.current?.getAudio() ?? null}
-        onClose={() => setLyricsOpen(false)}
-      />
 
       {toast && (
         <div className="fixed bottom-6 right-6 rounded-card bg-coral px-4 py-3 text-[13px] text-coral50 shadow-lg">
