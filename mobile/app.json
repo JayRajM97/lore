@@ -9,7 +9,17 @@
     "backgroundColor": "#FAFAF8",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lore.app"
+      "bundleIdentifier": "com.lore.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.331040043777-ef75f5ot1po0029u1kjv3gao23khmv8j"
+            ]
+          }
+        ]
+      }
     },
     "android": {
       "package": "com.lore.app"
@@ -17,6 +27,11 @@
     "splash": {
       "backgroundColor": "#FAFAF8",
       "resizeMode": "contain"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single-page",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": ["expo-router"],
     "experiments": {

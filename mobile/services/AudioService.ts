@@ -16,15 +16,28 @@ class AudioServiceImpl {
   private currentUrl: string | null = null;
 
   async init() {
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-    });
+    // setAudioModeAsync is iOS/Android only — skip on web.
+    if (typeof Audio.setAudioModeAsync === "function") {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+        });
+      } catch {
+        // ignore on platforms that don't support it
+      }
+    }
   }
 
   onStatus(cb: StatusCb) {
     this.cb = cb;
   }
+
+  // Web's HTMLMediaElement reports NaN/Infinity for position & duration until
+  // metadata loads; coerce to a safe finite number so downstream math never
+  // produces NaN (which crashes el.currentTime = NaN).
+  private finite = (n: unknown, fallback = 0) =>
+    typeof n === "number" && Number.isFinite(n) ? n : fallback;
 
   private handleStatus = (status: AVPlaybackStatus) => {
     if (!this.cb) return;
@@ -35,8 +48,8 @@ class AudioServiceImpl {
     this.cb({
       isLoaded: true,
       isPlaying: status.isPlaying,
-      positionMillis: status.positionMillis ?? 0,
-      durationMillis: status.durationMillis ?? 0,
+      positionMillis: this.finite(status.positionMillis),
+      durationMillis: this.finite(status.durationMillis),
       didJustFinish: status.didJustFinish ?? false,
     });
   };
@@ -47,11 +60,12 @@ class AudioServiceImpl {
       return;
     }
     await this.unload();
+    const startMs = Math.max(0, Math.round(this.finite(opts?.positionS) * 1000));
     const { sound } = await Audio.Sound.createAsync(
       { uri: url },
       {
         shouldPlay: opts?.autoplay ?? true,
-        positionMillis: Math.round((opts?.positionS ?? 0) * 1000),
+        positionMillis: startMs,
         rate: opts?.rate ?? 1,
         shouldCorrectPitch: true,
         progressUpdateIntervalMillis: 250,
@@ -81,6 +95,7 @@ class AudioServiceImpl {
     await this.sound?.pauseAsync();
   }
   async seek(seconds: number) {
+    if (!Number.isFinite(seconds)) return; // guard NaN scrub before metadata loads
     await this.sound?.setPositionAsync(Math.max(0, Math.round(seconds * 1000)));
   }
   async setRate(rate: number) {

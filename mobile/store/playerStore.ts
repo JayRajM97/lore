@@ -81,11 +81,14 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     get().isPlaying ? await get().pause() : await get().resume();
   },
   seek: async (seconds) => {
+    if (!Number.isFinite(seconds)) return;
     set({ playbackPosition: seconds });
     await AudioService.seek(seconds);
   },
   skip: async (delta) => {
-    const next = Math.min(Math.max(0, get().playbackPosition + delta), get().duration);
+    const pos = get().playbackPosition || 0;
+    const dur = get().duration || 0;
+    const next = dur > 0 ? Math.min(Math.max(0, pos + delta), dur) : Math.max(0, pos + delta);
     await get().seek(next);
   },
   setSpeed: async (speed) => {

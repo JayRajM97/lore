@@ -15,15 +15,18 @@ export default function NewsletterCard({
   onToggle: () => void;
 }) {
   return (
-    <Pressable style={styles.card} onPress={onToggle}>
+    <Pressable
+      style={[styles.card, selected && styles.cardOn]}
+      onPress={onToggle}
+    >
       <Avatar name={newsletter.sender_name} url={newsletter.sender_logo_url} size={44} />
       <View style={styles.center}>
         <Text style={styles.name} numberOfLines={1}>
           {newsletter.sender_name}
         </Text>
-        <Text style={styles.date}>Last issue {relativeDate(newsletter.last_received_at)}</Text>
-        <View style={{ marginTop: 6 }}>
+        <View style={styles.meta}>
           <FrequencyBadge label={newsletter.frequency} />
+          <Text style={styles.date}>· Last issue {relativeDate(newsletter.last_received_at)}</Text>
         </View>
       </View>
       <View style={[styles.check, selected && styles.checkOn]}>
@@ -39,20 +42,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: C.white,
-    borderRadius: 12,
-    borderWidth: 0.5,
+    borderRadius: 14,
+    borderWidth: 1.5,
     borderColor: C.border,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  center: { flex: 1 },
-  name: { fontSize: 15, fontWeight: "500", color: C.ink },
-  date: { fontSize: 13, color: C.muted, marginTop: 2 },
+  cardOn: {
+    borderColor: C.teal,
+    backgroundColor: C.teal50,
+  },
+  center: { flex: 1, gap: 4 },
+  name: { fontSize: 15, fontWeight: "600", color: C.ink },
+  meta: { flexDirection: "row", alignItems: "center", gap: 6 },
+  date: { fontSize: 13, color: C.muted },
   check: {
     width: 26,
     height: 26,
     borderRadius: 13,
     borderWidth: 1.5,
     borderColor: C.border,
+    backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -1,42 +1,75 @@
-import { View } from "react-native";
-import { Tabs } from "expo-router";
-import { BottomTabBar } from "@react-navigation/bottom-tabs";
-import { Text } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Tabs, usePathname, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MiniPlayer from "../../components/MiniPlayer";
 import { C } from "../../lib/theme";
 
-function TabIcon({ label, color }: { label: string; color: string }) {
-  return <Text style={{ fontSize: 18, color }}>{label}</Text>;
+const TABS = [
+  { name: "home", label: "Home", icon: "⌂" },
+  { name: "library", label: "Library", icon: "≣" },
+  { name: "search", label: "Search", icon: "⌕" },
+] as const;
+
+// Pure custom tab bar — no @react-navigation/bottom-tabs internals.
+// MiniPlayer sits above the tab buttons; safe-area insets pad the bottom.
+function CustomTabBar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.wrap, { paddingBottom: insets.bottom }]}>
+      <MiniPlayer />
+      <View style={styles.row}>
+        {TABS.map((t) => {
+          const active = pathname === `/${t.name}` || pathname.startsWith(`/${t.name}/`);
+          return (
+            <Pressable
+              key={t.name}
+              style={styles.tab}
+              onPress={() => router.replace(`/${t.name}`)}
+            >
+              <Text style={[styles.icon, active && styles.iconActive]}>{t.icon}</Text>
+              <Text style={[styles.label, active && styles.labelActive]}>{t.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 export default function TabsLayout() {
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: C.teal,
-        tabBarInactiveTintColor: C.muted,
-        tabBarStyle: { backgroundColor: C.bg, borderTopColor: C.border },
-      }}
-      tabBar={(props) => (
-        <View>
-          <MiniPlayer />
-          <BottomTabBar {...props} />
-        </View>
-      )}
+      tabBar={() => <CustomTabBar />}
+      screenOptions={{ headerShown: false }}
     >
-      <Tabs.Screen
-        name="home"
-        options={{ title: "Home", tabBarIcon: ({ color }) => <TabIcon label="⌂" color={color} /> }}
-      />
-      <Tabs.Screen
-        name="library"
-        options={{ title: "Library", tabBarIcon: ({ color }) => <TabIcon label="≣" color={color} /> }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{ title: "Search", tabBarIcon: ({ color }) => <TabIcon label="⌕" color={color} /> }}
-      />
+      <Tabs.Screen name="home" />
+      <Tabs.Screen name="library" />
+      <Tabs.Screen name="search" />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  wrap: {
+    backgroundColor: C.bg,
+    borderTopWidth: 0.5,
+    borderTopColor: C.border,
+  },
+  row: {
+    flexDirection: "row",
+    height: 50,
+  },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  icon: { fontSize: 20, color: C.muted },
+  iconActive: { color: C.teal },
+  label: { fontSize: 11, color: C.muted },
+  labelActive: { color: C.teal, fontWeight: "600" },
+});

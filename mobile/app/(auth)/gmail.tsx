@@ -1,27 +1,45 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
-import { api } from "../../lib/api";
+import { useGoogleAuth, fetchGoogleUser } from "../../lib/auth";
+import { useAuth } from "../../store/authStore";
 
 export default function GmailConnect() {
   const router = useRouter();
+  const setSession = useAuth((s) => s.setSession);
+  const [request, response, promptAsync] = useGoogleAuth();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (response?.type === "success") {
+      const token = response.authentication?.accessToken;
+      if (!token) {
+        setError("No access token returned.");
+        setBusy(false);
+        return;
+      }
+      fetchGoogleUser(token)
+        .then((user) => {
+          setSession(user, token);
+          router.replace("/(auth)/scan");
+        })
+        .catch(() => {
+          setError("Couldn't read your Google profile.");
+          setBusy(false);
+        });
+    } else if (response?.type === "error" || response?.type === "dismiss") {
+      setError(response.type === "error" ? "Couldn't connect Gmail. Try again." : null);
+      setBusy(false);
+    }
+  }, [response]);
 
   async function connect() {
     setBusy(true);
-    setError(false);
-    try {
-      // Stubbed OAuth for this pass. Real flow: expo-auth-session Google →
-      // POST /auth/gmail. See lib/api.connectGmail.
-      await api.connectGmail();
-      router.replace("/(auth)/scan");
-    } catch {
-      setError(true);
-      setBusy(false);
-    }
+    setError(null);
+    await promptAsync();
   }
 
   return (
@@ -33,13 +51,17 @@ export default function GmailConnect() {
       </View>
 
       <View style={styles.footer}>
-        <Pressable style={[styles.cta, busy && { opacity: 0.7 }]} onPress={connect} disabled={busy}>
+        <Pressable
+          style={[styles.cta, (busy || !request) && { opacity: 0.7 }]}
+          onPress={connect}
+          disabled={busy || !request}
+        >
           {busy ? <ActivityIndicator color={C.teal50} /> : <Text style={styles.ctaText}>Connect Gmail</Text>}
         </Pressable>
         <Text style={styles.reassure}>🔒 Read-only access. We only see newsletters.</Text>
         {error && (
           <Pressable onPress={connect}>
-            <Text style={styles.error}>Couldn't connect Gmail. Tap to try again.</Text>
+            <Text style={styles.error}>{error}</Text>
           </Pressable>
         )}
       </View>

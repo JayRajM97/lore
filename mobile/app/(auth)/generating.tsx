@@ -1,83 +1,178 @@
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
-import { Newsletter } from "../../lib/types";
+import { Newsletter, Episode } from "../../lib/types";
+import { fetchLatestEmail } from "../../lib/gmail";
+import { synthesize } from "../../lib/tts";
+import { useAuth } from "../../store/authStore";
 import Avatar from "../../components/Avatar";
 
-const STAGES = ["Queued", "Fetching", "Generating", "Done"] as const;
+type Stage = "queued" | "fetching" | "generating" | "done" | "failed";
+
+interface Item {
+  newsletter: Newsletter;
+  stage: Stage;
+  error?: string;
+}
+
+const STAGE_LABEL: Record<Stage, string> = {
+  queued: "Queued",
+  fetching: "Fetching email…",
+  generating: "Generating audio…",
+  done: "Done ✓",
+  failed: "Failed",
+};
+
+const MAX_W = 640;
 
 export default function Generating() {
   const router = useRouter();
-  const list: Newsletter[] = useMemo(() => (globalThis as any).__lore_generating ?? [], []);
-  const [stage, setStage] = useState<number[]>(() => list.map(() => 0));
+  const token = useAuth((s) => s.accessToken);
+  const list: Newsletter[] = (globalThis as any).__lore_generating ?? [];
+
+  const [items, setItems] = useState<Item[]>(
+    () => list.map((nl) => ({ newsletter: nl, stage: "queued" as Stage }))
+  );
   const [showSkip, setShowSkip] = useState(false);
+  const [done, setDone] = useState(false);
+  const ran = useRef(false);
+
+  function patch(i: number, update: Partial<Item>) {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...update } : it)));
+  }
 
   useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    list.forEach((_, i) => {
-      for (let s = 1; s <= 3; s++) {
-        timers.push(
-          setTimeout(() => {
-            setStage((prev) => {
-              const next = [...prev];
-              next[i] = Math.max(next[i], s);
-              return next;
-            });
-          }, i * 1500 + s * 1400)
-        );
+    if (ran.current || !list.length) return;
+    ran.current = true;
+
+    const skipT = setTimeout(() => setShowSkip(true), 12000);
+
+    (async () => {
+      const episodes: Episode[] = [];
+
+      for (let i = 0; i < list.length; i++) {
+        const nl = list[i];
+
+        // ── 1. fetch email body ──
+        patch(i, { stage: "fetching" });
+        let emailData: { subject: string; text: string } | null = null;
+        try {
+          emailData = token ? await fetchLatestEmail(nl, token) : null;
+        } catch (e: any) {
+          patch(i, { stage: "failed", error: e?.message ?? "Gmail fetch failed" });
+          continue;
+        }
+        if (!emailData) {
+          patch(i, { stage: "failed", error: "No recent email found" });
+          continue;
+        }
+
+        // ── 2. TTS synthesis ──
+        patch(i, { stage: "generating" });
+        let tts;
+        try {
+          tts = await synthesize(emailData.text, nl.sender_name);
+        } catch (e: any) {
+          patch(i, { stage: "failed", error: e?.message ?? "TTS failed" });
+          continue;
+        }
+        if (!tts) {
+          patch(i, { stage: "failed", error: "TTS returned empty" });
+          continue;
+        }
+
+        patch(i, { stage: "done" });
+        episodes.push({
+          id: `${nl.id}-${Date.now()}`,
+          newsletter_id: nl.id,
+          sender_name: nl.sender_name,
+          sender_logo_url: nl.sender_logo_url,
+          subject: emailData.subject,
+          raw_text: emailData.text,
+          audio_url: tts.audioUrl,
+          audio_duration_s: tts.durationS,
+          received_at: nl.last_received_at,
+        });
       }
-    });
-    const skipT = setTimeout(() => setShowSkip(true), 10000);
-    return () => {
-      timers.forEach(clearTimeout);
+
+      // Store episodes for home feed
+      (globalThis as any).__lore_episodes = episodes;
       clearTimeout(skipT);
-    };
-  }, [list]);
+      setDone(true);
+    })();
 
-  const done = stage.filter((s) => s === 3).length;
-  const overall = list.length ? done / list.length : 0;
+    return () => clearTimeout(skipT);
+  }, []);
 
-  // auto-advance to home when everything done
+  // Auto-advance when all done (or if nothing to do)
   useEffect(() => {
-    if (list.length && done === list.length) {
+    if (!list.length) {
+      router.replace("/home");
+      return;
+    }
+    if (done) {
       const t = setTimeout(() => router.replace("/home"), 800);
       return () => clearTimeout(t);
     }
-  }, [done, list.length, router]);
+  }, [done]);
 
-  const minutes = Math.max(1, Math.round(list.length * 0.7));
+  const doneCount = items.filter((it) => it.stage === "done").length;
+  const failCount = items.filter((it) => it.stage === "failed").length;
+  const progress = list.length ? (doneCount + failCount) / list.length : 0;
+  const minutes = Math.max(1, Math.round(list.length * 2));
 
   return (
     <SafeAreaView style={styles.wrap} edges={["top", "bottom"]}>
       <View style={styles.head}>
-        <Text style={styles.h1}>Preparing your feed</Text>
-        <Text style={styles.sub}>
-          About {minutes} min for {list.length} newsletter{list.length === 1 ? "" : "s"}
-        </Text>
-        <View style={styles.track}>
-          <View style={[styles.fill, { width: `${overall * 100}%` }]} />
+        <View style={styles.headInner}>
+          <Text style={styles.h1}>Generating your feed</Text>
+          <Text style={styles.sub}>
+            {done
+              ? `${doneCount} episode${doneCount !== 1 ? "s" : ""} ready`
+              : `~${minutes} min · ${doneCount}/${list.length} done`}
+          </Text>
+          <View style={styles.track}>
+            <View style={[styles.fill, { width: `${progress * 100}%` }]} />
+          </View>
         </View>
       </View>
 
-      <View style={{ flex: 1, paddingHorizontal: 16, gap: 10 }}>
-        {list.map((nl, i) => (
-          <View key={nl.id} style={styles.row}>
-            <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
-            <Text style={styles.name} numberOfLines={1}>
-              {nl.sender_name}
-            </Text>
-            <Text style={[styles.status, stage[i] === 3 && { color: C.teal }]}>
-              {stage[i] === 3 ? "Done ✓" : STAGES[stage[i]]}
-            </Text>
-          </View>
-        ))}
-      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.list}>
+          {items.map(({ newsletter: nl, stage, error }, i) => (
+            <View key={nl.id} style={styles.row}>
+              <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name} numberOfLines={1}>{nl.sender_name}</Text>
+                {error ? (
+                  <Text style={styles.errorText} numberOfLines={1}>{error}</Text>
+                ) : (
+                  <Text style={[styles.status, stage === "done" && styles.statusDone]}>
+                    {STAGE_LABEL[stage]}
+                  </Text>
+                )}
+              </View>
+              {stage === "fetching" || stage === "generating" ? (
+                <Text style={styles.spinner}>⟳</Text>
+              ) : stage === "done" ? (
+                <Text style={styles.checkmark}>✓</Text>
+              ) : stage === "failed" ? (
+                <Text style={styles.failMark}>✕</Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
 
-      {showSkip && (
+      {showSkip && !done && (
         <Pressable style={styles.skip} onPress={() => router.replace("/home")}>
-          <Text style={styles.skipText}>Skip and explore →</Text>
+          <Text style={styles.skipText}>Skip for now →</Text>
         </Pressable>
       )}
     </SafeAreaView>
@@ -86,14 +181,37 @@ export default function Generating() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
-  head: { padding: 20, gap: 8 },
-  h1: { fontSize: 24, fontWeight: "600", color: C.ink },
+  head: { borderBottomWidth: 0.5, borderColor: C.border },
+  headInner: {
+    width: "100%",
+    maxWidth: MAX_W,
+    alignSelf: "center",
+    padding: 20,
+    gap: 6,
+  },
+  h1: { fontSize: 24, fontWeight: "700", color: C.ink, letterSpacing: -0.3 },
   sub: { fontSize: 15, color: C.muted },
-  track: { height: 6, backgroundColor: C.border, borderRadius: 100, marginTop: 10, overflow: "hidden" },
-  fill: { height: 6, backgroundColor: C.teal },
-  row: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: 12, borderWidth: 0.5, borderColor: C.border, padding: 12 },
-  name: { flex: 1, fontSize: 15, fontWeight: "500", color: C.ink },
-  status: { fontSize: 13, color: C.muted },
+  track: { height: 6, backgroundColor: C.border, borderRadius: 100, marginTop: 8, overflow: "hidden" },
+  fill: { height: 6, backgroundColor: C.teal, borderRadius: 100 },
+  scroll: { paddingVertical: 12, paddingBottom: 80 },
+  list: { width: "100%", maxWidth: MAX_W, alignSelf: "center", paddingHorizontal: 16, gap: 10 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: C.white,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: C.border,
+    padding: 12,
+  },
+  name: { fontSize: 15, fontWeight: "500", color: C.ink },
+  status: { fontSize: 13, color: C.muted, marginTop: 2 },
+  statusDone: { color: C.teal },
+  errorText: { fontSize: 13, color: C.coral, marginTop: 2 },
+  spinner: { fontSize: 18, color: C.muted },
+  checkmark: { fontSize: 16, color: C.teal, fontWeight: "700" },
+  failMark: { fontSize: 16, color: C.coral },
   skip: { alignItems: "center", paddingVertical: 20 },
   skipText: { color: C.teal, fontSize: 15, fontWeight: "500" },
 });

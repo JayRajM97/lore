@@ -17,10 +17,16 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    api.getFeed().then((f) => {
-      setFeed(f);
+    const real: Episode[] | undefined = (globalThis as any).__lore_episodes;
+    if (real && real.length > 0) {
+      setFeed(real);
       setLoaded(true);
-    });
+    } else {
+      api.getFeed().then((f) => {
+        setFeed(f);
+        setLoaded(true);
+      });
+    }
   }, []);
 
   const continueEp = feed.find(

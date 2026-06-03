@@ -14,12 +14,25 @@ mobile/node_modules/
 mobile/.expo/
 mobile/dist/
 
-# Env
+# Env / secrets — NEVER commit these
 .env
 .env.local
+backend/.env
+**/serviceAccount*.json
+**/firebase-service-account*.json
+
+# Firebase mobile config (contains API key — semi-public but keep out of git)
+GoogleService-Info.plist
+mobile/GoogleService-Info.plist
+google-services.json
 
 # OS
 .DS_Store
+
+# Editor swap / temp files
+*.swp
+*.swo
+*~
 
 # Generated audio (ephemeral in /tmp, but ignore any local copies)
 *.mp3
