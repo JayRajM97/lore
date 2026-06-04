@@ -6,6 +6,7 @@ import { C } from "../../lib/theme";
 import { Newsletter, Episode } from "../../lib/types";
 import { fetchLatestEmail } from "../../lib/gmail";
 import { synthesize } from "../../lib/tts";
+import { saveEpisodes } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import Avatar from "../../components/Avatar";
 
@@ -15,13 +16,15 @@ interface Item {
   newsletter: Newsletter;
   stage: Stage;
   error?: string;
+  wordCount?: number;
+  genMs?: number;
 }
 
 const STAGE_LABEL: Record<Stage, string> = {
   queued: "Queued",
   fetching: "Fetching email…",
   generating: "Generating audio…",
-  done: "Done ✓",
+  done: "Done",
   failed: "Failed",
 };
 
@@ -30,6 +33,7 @@ const MAX_W = 640;
 export default function Generating() {
   const router = useRouter();
   const token = useAuth((s) => s.accessToken);
+  const user = useAuth((s) => s.user);
   const list: Newsletter[] = (globalThis as any).__lore_generating ?? [];
 
   const [items, setItems] = useState<Item[]>(
@@ -73,17 +77,13 @@ export default function Generating() {
         patch(i, { stage: "generating" });
         let tts;
         try {
-          tts = await synthesize(emailData.text, nl.sender_name);
+          tts = await synthesize(emailData.text);
         } catch (e: any) {
           patch(i, { stage: "failed", error: e?.message ?? "TTS failed" });
           continue;
         }
-        if (!tts) {
-          patch(i, { stage: "failed", error: "TTS returned empty" });
-          continue;
-        }
 
-        patch(i, { stage: "done" });
+        patch(i, { stage: "done", wordCount: tts.wordCount, genMs: tts.generationTimeMs });
         episodes.push({
           id: `${nl.id}-${Date.now()}`,
           newsletter_id: nl.id,
@@ -94,11 +94,20 @@ export default function Generating() {
           audio_url: tts.audioUrl,
           audio_duration_s: tts.durationS,
           received_at: nl.last_received_at,
+          words: tts.words,
+          word_count: tts.wordCount,
+          generation_time_ms: tts.generationTimeMs,
         });
       }
 
-      // Store episodes for home feed
+      // Store episodes for the immediate home feed, and persist to Firestore so
+      // they survive reload and show up in the Library (fire-and-forget).
       (globalThis as any).__lore_episodes = episodes;
+      if (user && episodes.length) {
+        saveEpisodes(user.sub, episodes).catch((e) =>
+          console.error("saveEpisodes failed", e)
+        );
+      }
       clearTimeout(skipT);
       setDone(true);
     })();
@@ -145,17 +154,20 @@ export default function Generating() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.list}>
-          {items.map(({ newsletter: nl, stage, error }, i) => (
+          {items.map(({ newsletter: nl, stage, error, wordCount, genMs }) => (
             <View key={nl.id} style={styles.row}>
               <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={1}>{nl.sender_name}</Text>
                 {error ? (
                   <Text style={styles.errorText} numberOfLines={1}>{error}</Text>
-                ) : (
-                  <Text style={[styles.status, stage === "done" && styles.statusDone]}>
-                    {STAGE_LABEL[stage]}
+                ) : stage === "done" ? (
+                  <Text style={styles.statusDone}>
+                    {wordCount ? `${wordCount} words` : "Done"}
+                    {genMs ? `  ·  ${(genMs / 1000).toFixed(1)}s` : ""}
                   </Text>
+                ) : (
+                  <Text style={styles.status}>{STAGE_LABEL[stage]}</Text>
                 )}
               </View>
               {stage === "fetching" || stage === "generating" ? (

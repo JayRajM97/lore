@@ -24,6 +24,9 @@ export interface Episode {
   audio_url: string;
   audio_duration_s: number;
   received_at: string; // ISO
+  words?: WordTs[];          // per-word timestamps from Kokoro, for lyrics sync
+  word_count?: number;       // total words synthesized
+  generation_time_ms?: number;
   // per-user playback state
   playback_position_s?: number;
   is_completed?: boolean;

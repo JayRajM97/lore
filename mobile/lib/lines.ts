@@ -27,8 +27,18 @@ export function wc(s: string): number {
 }
 
 function isHeader(s: string): boolean {
-  if (wc(s) > 14 || /["“]/.test(s)) return false;
-  return /(\bideas?\s+from\b|\bquotes?\s+from\b|question to sit with|^here are\b|^here's\b)/i.test(s);
+  const words = wc(s);
+  if (words > 14 || /[“”]/.test(s)) return false;
+  // Known recurring column patterns.
+  if (/(\bideas?\s+from\b|\bquotes?\s+from\b|question to sit with|^here are\b|^here's\b)/i.test(s)) return true;
+  // Short lines without terminal punctuation → section heading.
+  // Newsletter HTML h2/h3 lose their tag; what remains is short unfinished text.
+  if (words <= 8 && !/[.!?,;:]$/.test(s.trim())) return true;
+  // Numbered sections: “1.” / “1)” at start (James Clear, Shane Parrish style).
+  if (/^\d+[.)]\s+\S/.test(s.trim()) && words <= 10) return true;
+  // Emoji-led section openers common in newsletters: “💡 The Idea”, “📚 Reading”.
+  if (/^[\u{1F300}-\u{1FAD6}]/u.test(s.trim()) && words <= 10) return true;
+  return false;
 }
 
 // Break one sentence into <=MAX_WORDS phrase lines at natural boundaries.
@@ -157,6 +167,22 @@ export function buildLines(
   }
 
   return lines;
+}
+
+export interface Chapter {
+  title: string;
+  time: number; // seconds
+}
+
+/** Extract chapter markers from newsletter text — one per header line. */
+export function extractChapters(
+  text: string,
+  duration: number,
+  words?: WordTs[] | null
+): Chapter[] {
+  return buildLines(text, duration, words)
+    .filter((l) => l.kind === "header" && l.text.trim())
+    .map((l) => ({ title: l.text.trim(), time: l.start_time }));
 }
 
 // Active line index for a given playback time (binary-ish linear scan).

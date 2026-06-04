@@ -10,7 +10,7 @@ import {
   QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { Newsletter } from "./types";
+import { Newsletter, Episode } from "./types";
 
 // users/{userId}/follows/{newsletterId}
 function followsCol(userId: string) {
@@ -44,4 +44,45 @@ export async function getFollows(userId: string): Promise<Newsletter[]> {
 
 export async function unfollow(userId: string, newsletterId: string) {
   await deleteDoc(doc(followsCol(userId), newsletterId));
+}
+
+// ── generated episodes ──────────────────────────────────────────────────────
+// users/{userId}/episodes/{episodeId}
+//
+// NOTE: audio_url points at the sidecar's /tmp file (ephemeral — gone on sidecar
+// restart). We persist the metadata + text + word timings so the Library always
+// lists what was generated; stale audio can be re-synthesized later from raw_text.
+function episodesCol(userId: string) {
+  return collection(db, "users", userId, "episodes");
+}
+
+export async function saveEpisodes(userId: string, episodes: Episode[]) {
+  await Promise.all(
+    episodes.map((e) =>
+      setDoc(doc(episodesCol(userId), e.id), {
+        newsletter_id: e.newsletter_id,
+        sender_name: e.sender_name,
+        sender_logo_url: e.sender_logo_url ?? null,
+        subject: e.subject,
+        raw_text: e.raw_text ?? null,
+        audio_url: e.audio_url,
+        audio_duration_s: e.audio_duration_s,
+        received_at: e.received_at,
+        words: e.words ?? null,
+        word_count: e.word_count ?? null,
+        generation_time_ms: e.generation_time_ms ?? null,
+        created_at: serverTimestamp(),
+      })
+    )
+  );
+}
+
+export async function getEpisodes(userId: string): Promise<Episode[]> {
+  const snap = await getDocs(episodesCol(userId));
+  const eps = snap.docs.map((d: QueryDocumentSnapshot) => ({
+    id: d.id,
+    ...(d.data() as Omit<Episode, "id">),
+  }));
+  // newest first
+  return eps.sort((a, b) => +new Date(b.received_at) - +new Date(a.received_at));
 }

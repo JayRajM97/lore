@@ -3,9 +3,10 @@ import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
-import { api } from "../../lib/api";
 import { Episode } from "../../lib/types";
 import { greeting, mmss } from "../../lib/format";
+import { getEpisodes } from "../../lib/db";
+import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
 import EpisodeCard from "../../components/EpisodeCard";
 import Avatar from "../../components/Avatar";
@@ -13,21 +14,29 @@ import Avatar from "../../components/Avatar";
 export default function Home() {
   const router = useRouter();
   const play = usePlayer((s) => s.play);
+  const user = useAuth((s) => s.user);
   const [feed, setFeed] = useState<Episode[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const real: Episode[] | undefined = (globalThis as any).__lore_episodes;
-    if (real && real.length > 0) {
-      setFeed(real);
+    // Real episodes only — no mock fallback. Prefer this session's freshly
+    // generated episodes; otherwise load persisted ones from Firestore so the
+    // feed survives reload.
+    const session: Episode[] = (globalThis as any).__lore_episodes ?? [];
+    if (session.length) {
+      setFeed(session);
       setLoaded(true);
-    } else {
-      api.getFeed().then((f) => {
-        setFeed(f);
-        setLoaded(true);
-      });
+      return;
     }
-  }, []);
+    if (!user) {
+      setLoaded(true);
+      return;
+    }
+    getEpisodes(user.sub)
+      .then((eps) => setFeed(eps))
+      .catch((e) => console.error("home feed load failed", e))
+      .finally(() => setLoaded(true));
+  }, [user]);
 
   const continueEp = feed.find(
     (e) => (e.playback_position_s ?? 0) > 0 && !e.is_completed
