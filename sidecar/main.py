@@ -20,6 +20,7 @@ import re
 import time
 import uuid
 import subprocess
+import urllib.parse
 from typing import Dict, Optional
 
 import numpy as np
@@ -99,15 +100,33 @@ def init_firebase():
 
 
 def upload_to_storage(local_path: str, audio_id: str) -> Optional[str]:
-    """Upload MP3 to Firebase Storage, return permanent public URL or None on failure."""
+    """Upload MP3 to Firebase Storage and return a permanent Firebase download URL.
+
+    Uses the firebaseStorageDownloadTokens metadata pattern so the URL works
+    via the Firebase Storage REST API without requiring the bucket to be public
+    or uniform access control to be disabled.
+    """
+    if not _FIREBASE_AVAILABLE or not firebase_admin._apps:
+        return None
     try:
+        download_token = str(uuid.uuid4())
+        storage_path = f"audio/{audio_id}.mp3"
+
         bucket = fb_storage.bucket()
-        blob = bucket.blob(f"audio/{audio_id}.mp3")
+        blob = bucket.blob(storage_path)
+        blob.metadata = {"firebaseStorageDownloadTokens": download_token}
         blob.upload_from_filename(local_path, content_type="audio/mpeg")
-        blob.make_public()
-        return blob.public_url
+        blob.patch()  # persist the metadata
+
+        encoded = urllib.parse.quote(storage_path, safe="")
+        url = (
+            f"https://firebasestorage.googleapis.com/v0/b/{STORAGE_BUCKET}"
+            f"/o/{encoded}?alt=media&token={download_token}"
+        )
+        print(f"[lore] uploaded to Storage: {url}", flush=True)
+        return url
     except Exception as e:
-        print(f"[lore] Storage upload failed for {audio_id}: {e}", flush=True)
+        print(f"[lore] Storage upload FAILED for {audio_id}: {e}", flush=True)
         return None
 
 

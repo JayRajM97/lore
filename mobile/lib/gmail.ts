@@ -353,8 +353,9 @@ function parseMessage(msg: any): MsgMeta | null {
   // 2. Curated editorial newsletters — always keep, skip remaining vetoes.
   if (domainMatches(domain, EDITORIAL_ALLOW)) return keep(100);
 
-  // 3. Must have an unsubscribe header — baseline for any bulk/newsletter mail.
-  if (!hasUnsub) return null;
+  // 3. (hasUnsub check removed — messages come from has:unsubscribe query
+  //     which is the server-side source of truth; checking the header again
+  //     via metadata format is unreliable due to API casing behaviour.)
 
   // 4. Transactional sender local-part veto (no-reply@, alerts@, etc.).
   if (NEG_SENDER.test(localPart)) return null;
@@ -403,19 +404,25 @@ async function listIds(query: string, token: string, max: number): Promise<strin
 // Targeted EDITORIAL_ALLOW queries guarantee curated senders even if they lack
 // the unsubscribe header or fall outside the 90-day window.
 export async function scanInbox(accessToken: string): Promise<Newsletter[]> {
-  // has:unsubscribe is a server-side Gmail filter covering ALL tabs/categories.
-  const broad = listIds("newer_than:90d has:unsubscribe", accessToken, 500);
+  // category:updates — newsletters Gmail correctly classifies
+  // category:promotions — newsletters Gmail routes to Promotions (ESPs etc.)
+  // category:primary — newsletters the user has replied to or starred (Gmail
+  //   moves them out of Updates/Promotions into Primary)
+  // NOTE: has:unsubscribe is NOT a valid Gmail API search operator (web-UI only).
+  const [updates, promotions, primary, targeted] = await Promise.all([
+    listIds("newer_than:90d category:updates", accessToken, 300),
+    listIds("newer_than:90d category:promotions", accessToken, 300),
+    listIds("newer_than:90d category:primary", accessToken, 100),
+    pool(EDITORIAL_ALLOW, 6, (domain) =>
+      listIds(`from:${domain} newer_than:90d`, accessToken, 5)
+    ),
+  ]);
 
-  // Guaranteed fetch for curated editorial senders regardless of Gmail tab.
-  const targeted = pool(EDITORIAL_ALLOW, 6, (domain) =>
-    listIds(`from:${domain} newer_than:90d`, accessToken, 5)
-  );
+  const ids = Array.from(new Set([
+    ...updates, ...promotions, ...primary, ...targeted.flat(),
+  ]));
+  console.log(`[scan] updates=${updates.length} promos=${promotions.length} primary=${primary.length} targeted=${targeted.flat().length} total=${ids.length}`);
 
-  const [broadIds, targetedIds] = await Promise.all([broad, targeted]);
-  const ids = Array.from(new Set([...broadIds, ...targetedIds.flat()]));
-
-  // format=metadata returns snippet + the specified headers in payload.headers.
-  // format=minimal does NOT include payload/headers — only id/labels/snippet.
   const metas = await pool(ids.slice(0, 600), 10, (id) =>
     getJson(
       `${GMAIL}/messages/${id}?format=metadata` +
@@ -423,6 +430,8 @@ export async function scanInbox(accessToken: string): Promise<Newsletter[]> {
       accessToken
     ).then(parseMessage)
   );
+  const passed = metas.filter(Boolean).length;
+  console.log(`[scan] classified=${metas.length} passed=${passed} rejected=${metas.length - passed}`);
 
   // group by sender
   const bySender = new Map<string, MsgMeta[]>();
