@@ -2,17 +2,21 @@ import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { C } from "../lib/theme";
+import { useAuth } from "../store/authStore";
 
 export default function Splash() {
   const router = useRouter();
+  const restore = useAuth((s) => s.restore);
   const fade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-    // No session persistence yet → always go to onboarding.
-    const t = setTimeout(() => router.replace("/(auth)/onboarding"), 1500);
+    const t = setTimeout(() => {
+      const hasSession = restore(); // populates store from localStorage
+      router.replace(hasSession ? "/home" : "/(auth)/onboarding");
+    }, 800); // shorter splash — user already knows the app
     return () => clearTimeout(t);
-  }, [fade, router]);
+  }, []);
 
   return (
     <View style={styles.wrap}>

@@ -134,7 +134,7 @@ export default function Generating() {
         patch(i, { stage: "fetching" });
         let emailsData: Array<{ subject: string; text: string }> = [];
         try {
-          emailsData = await fetchRecentEmails(nl, token, 10);
+          emailsData = await fetchRecentEmails(nl, token, 2);
         } catch (e: any) {
           patch(i, { stage: "failed", error: e?.message ?? "Gmail fetch failed" });
           continue;

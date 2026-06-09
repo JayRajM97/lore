@@ -322,14 +322,16 @@ interface MsgMeta {
 // everything else needs a real editorial positive AND must clear the
 // transactional/promo veto applied to subject + snippet.
 function parseMessage(msg: any): MsgMeta | null {
+  // Lowercase keys — email headers are case-insensitive (RFC 2822) but Gmail
+  // returns them with original sender capitalization, so normalize here.
   const headers: Record<string, string> = {};
-  for (const h of msg?.payload?.headers ?? []) headers[h.name] = h.value;
+  for (const h of msg?.payload?.headers ?? []) headers[h.name.toLowerCase()] = h.value;
 
-  const from = headers["From"] ?? "";
-  const subject = headers["Subject"] ?? "";
-  const date = headers["Date"] ?? "";
+  const from = headers["from"] ?? "";
+  const subject = headers["subject"] ?? "";
+  const date = headers["date"] ?? "";
   const snippet: string = msg?.snippet ?? "";
-  const hasUnsub = !!headers["List-Unsubscribe"];
+  const hasUnsub = !!headers["list-unsubscribe"];
 
   const m = from.match(/<([^>]+)>/);
   const email = (m ? m[1] : from).toLowerCase().trim();

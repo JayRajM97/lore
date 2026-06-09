@@ -10,6 +10,7 @@ import { DEFAULT_VOICE } from "@/lib/voices";
 export default function Home() {
   const [text, setText] = useState("");
   const [voice, setVoice] = useState(DEFAULT_VOICE);
+  const [voiceDescription, setVoiceDescription] = useState("");
 
   const [generating, setGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -70,7 +71,13 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice }),
+        body: JSON.stringify({
+          text,
+          // "custom" sentinel means user wrote a description — send that, not an id
+          ...(voice === "custom"
+            ? { description: voiceDescription }
+            : { voice }),
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -121,8 +128,10 @@ export default function Home() {
             <TextInput
               text={text}
               voice={voice}
+              voiceDescription={voiceDescription}
               onTextChange={setText}
               onVoiceChange={setVoice}
+              onVoiceDescriptionChange={setVoiceDescription}
               generating={generating}
               genElapsed={genElapsed}
               generatedSeconds={stats ? stats.generation_time_ms / 1000 : null}
