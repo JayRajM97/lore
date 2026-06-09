@@ -20,7 +20,7 @@ import re
 import time
 import uuid
 import subprocess
-from typing import Dict
+from typing import Dict, Optional
 
 import numpy as np
 import soundfile as sf
@@ -31,9 +31,25 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from kokoro import KPipeline
 
+try:
+    import firebase_admin
+    from firebase_admin import credentials, storage as fb_storage
+    _FIREBASE_AVAILABLE = True
+except ImportError:
+    _FIREBASE_AVAILABLE = False
+
 SAMPLE_RATE = 24000
-OUTPUT_DIR = "/tmp"
+OUTPUT_DIR = os.path.expanduser("~/.lore/audio")
 LANG_CODE = "a"  # American English
+
+# Path to Firebase service account key JSON (download from Firebase Console →
+# Project Settings → Service Accounts → Generate new private key).
+# Set env var or place file at the default path.
+SERVICE_ACCOUNT_PATH = os.environ.get(
+    "FIREBASE_SERVICE_ACCOUNT",
+    os.path.expanduser("~/.lore/firebase-service-account.json"),
+)
+STORAGE_BUCKET = "lore-10132.firebasestorage.app"
 
 # Kokoro uses named voices, not free-form descriptions. Default to a warm
 # American male (matches the playground's default "male, 30s, warm").
@@ -66,9 +82,49 @@ def pick_device() -> str:
     return "cpu"
 
 
+def init_firebase():
+    if not _FIREBASE_AVAILABLE:
+        print("[lore] firebase-admin not installed — Storage upload disabled", flush=True)
+        return
+    if not os.path.exists(SERVICE_ACCOUNT_PATH):
+        print(f"[lore] service account not found at {SERVICE_ACCOUNT_PATH} — Storage upload disabled", flush=True)
+        return
+    try:
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+            firebase_admin.initialize_app(cred, {"storageBucket": STORAGE_BUCKET})
+        print("[lore] Firebase Admin initialised — audio will upload to Storage", flush=True)
+    except Exception as e:
+        print(f"[lore] Firebase Admin init failed: {e}", flush=True)
+
+
+def upload_to_storage(local_path: str, audio_id: str) -> Optional[str]:
+    """Upload MP3 to Firebase Storage, return permanent public URL or None on failure."""
+    try:
+        bucket = fb_storage.bucket()
+        blob = bucket.blob(f"audio/{audio_id}.mp3")
+        blob.upload_from_filename(local_path, content_type="audio/mpeg")
+        blob.make_public()
+        return blob.public_url
+    except Exception as e:
+        print(f"[lore] Storage upload failed for {audio_id}: {e}", flush=True)
+        return None
+
+
 @app.on_event("startup")
 def load_models():
     global pipeline, DEVICE
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Rebuild in-memory map from previously generated files so audio_urls
+    # stored in Firestore survive sidecar restarts.
+    for fname in os.listdir(OUTPUT_DIR):
+        if fname.startswith("lore-") and fname.endswith(".mp3"):
+            audio_id = fname[len("lore-"):-len(".mp3")]
+            AUDIO_FILES[audio_id] = os.path.join(OUTPUT_DIR, fname)
+    print(f"[lore] restored {len(AUDIO_FILES)} cached audio files", flush=True)
+
+    init_firebase()
+
     DEVICE = pick_device()
     print(f"[lore] loading Kokoro-82M on device={DEVICE} ...", flush=True)
     try:
@@ -81,11 +137,43 @@ def load_models():
 
 
 def pick_voice(description: str | None, explicit: str | None) -> str:
+    """Map a free-text voice description to the closest Kokoro voice.
+
+    Priority order:
+      1. explicit voice id (user selected from dropdown) — always wins
+      2. keyword heuristic on description
+      3. fallback to DEFAULT_VOICE
+    """
     if explicit:
         return explicit
+
     d = (description or "").lower()
-    if any(w in d for w in ["female", "woman", " she ", "girl", "lady"]):
-        return FEMALE_VOICE
+
+    # ── female voices ──────────────────────────────────────────────────────
+    # af_nicole — soft, breathy, intimate narrator
+    if any(w in d for w in ["soft", "breathy", "intimate", "whisper", "gentle narrator", "asmr"]):
+        return "af_nicole"
+    # af_sky — young, casual, energetic female
+    if any(w in d for w in ["young woman", "college", "teen", "casual female", "playful"]):
+        return "af_sky"
+    # af_bella — bright, clear, upbeat female
+    if any(w in d for w in ["bright", "upbeat", "energetic woman", "cheerful", "news anchor female"]):
+        return "af_bella"
+    # af_heart — warm, conversational female (default female)
+    if any(w in d for w in ["female", "woman", " she ", "girl", "lady", "warm woman", "podcast host female"]):
+        return "af_heart"
+
+    # ── male voices ────────────────────────────────────────────────────────
+    # am_onyx — deep, serious, authoritative
+    if any(w in d for w in ["deep", "bass", "authoritative", "serious", "gravitas", "baritone", "documentary"]):
+        return "am_onyx"
+    # am_puck — bright, light, animated male
+    if any(w in d for w in ["bright male", "animated", "light male", "enthusiastic", "energetic male"]):
+        return "am_puck"
+    # am_michael — warm conversational male (default)
+    if any(w in d for w in ["male", "man", " he ", "guy", "podcast", "narrator", "conversational", "warm"]):
+        return "am_michael"
+
     return DEFAULT_VOICE
 
 
@@ -181,9 +269,14 @@ def synthesize(req: SynthRequest):
     pcm_to_mp3(pcm, path)
     AUDIO_FILES[audio_id] = path
 
+    # Upload to Firebase Storage for a permanent public URL.
+    # Falls back to local sidecar URL if Storage isn't configured.
+    storage_url = upload_to_storage(path, audio_id)
+    audio_url = storage_url if storage_url else f"/audio/{audio_id}"
+
     return JSONResponse({
         "id": audio_id,
-        "audio_url": f"/audio/{audio_id}",
+        "audio_url": audio_url,
         "voice": voice,
         "generation_time_ms": gen_ms,
         "audio_duration_s": round(len(pcm) / SAMPLE_RATE, 2),

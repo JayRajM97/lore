@@ -90,7 +90,7 @@ function cleanProse(t: string): string {
     .replace(/https?:\/\/[^\s<>)]+/gi, "")                       // bare URLs
     .replace(/www\.[^\s<>)]+/gi, "")
     .replace(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, "")                // emails
-    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")           // zero-width / soft hyphen
+    .replace(/[\u200B-\u200D\uFEFF\u00AD\u034F]/g, "")      // zero-width / soft hyphen / CGJ spacer
     .replace(/^[*_#>`~|\-\s]+$/gm, "")                          // separator-only lines
     .replace(/[*_`~]+/g, "")                                     // md emphasis
     .replace(/[-=–—]{3,}/g, " ")                                // rule lines
@@ -161,6 +161,45 @@ export async function fetchLatestEmail(
   return { subject, text: trimmed };
 }
 
+/** Fetch up to `max` recent emails (last 90 days) from a newsletter sender. */
+export async function fetchRecentEmails(
+  newsletter: Newsletter,
+  token: string,
+  max = 10
+): Promise<Array<{ subject: string; text: string }>> {
+  const search = await getJson(
+    `${GMAIL}/messages?q=${encodeURIComponent(
+      `from:${newsletter.sender_email} newer_than:90d`
+    )}&maxResults=${max}`,
+    token
+  );
+  const ids: string[] = (search.messages ?? []).map((m: any) => m.id);
+  if (!ids.length) return [];
+
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const msg = await getJson(`${GMAIL}/messages/${id}?format=full`, token);
+        const hdrs: Record<string, string> = {};
+        for (const h of msg?.payload?.headers ?? []) hdrs[h.name] = h.value;
+        const subject = hdrs["Subject"] ?? newsletter.sender_name;
+        const plainRaw = findPart(msg.payload, "text/plain");
+        const htmlRaw = findPart(msg.payload, "text/html");
+        const plain = plainRaw ? cutFooter(cleanProse(plainRaw)) : "";
+        const fromHtml = htmlRaw ? cutFooter(cleanProse(stripHtml(htmlRaw))) : "";
+        const text = fromHtml.length > plain.length ? fromHtml : plain;
+        if (!text || text.trim().length < 50) return null;
+        const trimmed = text.split(/\s+/).filter(Boolean).slice(0, 2500).join(" ");
+        return { subject, text: trimmed };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results.filter((r): r is { subject: string; text: string } => r !== null);
+}
+
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 // Newsletter delivery platforms (ESPs). Mail from these is *probably* a real
@@ -168,13 +207,11 @@ const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const ESP_DOMAINS = [
   "substack.com", "beehiiv.com", "mail.beehiiv.com", "ghost.io",
   "convertkit.com", "convertkit-mail.com", "kit.com", "buttondown.email",
-  "mailchimpapp.net", "ck.page",
+  "mailchimpapp.net", "ck.page", "revue.co", "letterhead.email",
 ];
 
-// Curated editorial newsletters we always want included, even if Gmail buried
-// them past the recent-message window. Each is fetched directly by sender so
-// they can never be missed (James Clear's 3-2-1, Shane Parrish's Brain Food,
-// Sahil Bloom's Curiosity Chronicle, etc.). Add senders here freely.
+// Curated editorial newsletters — always included regardless of Gmail category
+// or how many messages they sent. Add any newsletter you follow here.
 const EDITORIAL_ALLOW = [
   "jamesclear.com",
   "fs.blog", "farnamstreetblog.com",
@@ -186,21 +223,53 @@ const EDITORIAL_ALLOW = [
   "platformer.news",
   "lennysnewsletter.com",
   "newsletter.pragmaticengineer.com",
+  "milkroad.com",
+  "tldrnewsletter.com",
+  "thisweekinfintech.com",
+  "notboring.co",
+  "thebrowser.com",
 ];
 
-// Editorial subject markers — issue numbering, volume, recurring-column names.
-const POS_SUBJECT = /\b(issue|vol\.?|edition|weekly|3-?2-?1|brain food|curiosity chronicle|the profile|digest)\b|#\s?\d+/i;
+// Hard denylist — these are apps/banks/fintechs that send bulk mail but are
+// never editorial newsletters. Domain match → immediately reject.
+const DOMAIN_DENYLIST = [
+  // fintech / banking / payments
+  "hdfcbank.com", "hdfcbank.net", "axisbank.com", "icicibank.com",
+  "sbicard.com", "kotakbank.com", "yesbank.in",
+  "cred.club", "credclub.in",
+  "paytm.com", "phonepe.com", "googlepay.com",
+  "razorpay.com", "razorpayx.com",
+  // food / delivery
+  "swiggy.com", "zomato.com", "blinkit.com",
+  // ride-hailing
+  "ola.money", "uber.com",
+  // e-commerce
+  "amazon.com", "amazon.in", "flipkart.com", "myntra.com", "meesho.com",
+  "tatacliq.com", "ajio.com", "nykaa.com",
+  // learning apps (notification-only, not editorial)
+  "duolingo.com", "byjus.com", "unacademy.com",
+  // social / job
+  "linkedin.com", "naukri.com", "glassdoor.com",
+  // travel
+  "makemytrip.com", "cleartrip.com", "ixigo.com", "goibibo.com",
+  // telco
+  "jio.com", "airtel.com", "vodafone.com",
+];
 
-// Transactional / promo / alert / job / social — NOT newsletters. Matched
-// against subject + Gmail snippet. Any hit vetoes a sender (unless curated).
+// Editorial subject markers — issue numbering, recurring-column names.
+const POS_SUBJECT =
+  /\b(issue|vol\.?|edition|weekly|monthly|3-?2-?1|brain food|curiosity chronicle|the profile|digest|roundup|recap)\b|#\s?\d+/i;
+
+// Transactional / notification / promo veto — matched against subject + snippet.
 const NEG_CONTENT =
-  /\b(otp|one[- ]time|password|verify|verification|sign[- ]?in|log[- ]?in|security alert|account|statement|invoice|receipt|payment|transaction|balance|emi|credit card|debit|refund|kyc|due|bill|delivery|shipped|order|tracking|cashback|coupon|% off|\bsale\b|\bdeal\b|\boffer\b|discount|limited time|flash sale|buy now|shop now|job alert|jobs for you|hiring|new jobs|application|interview|booking|itinerary|reservation|appointment)\b/i;
+  /\b(otp|one[- ]time (password|pin)|verify|verification|sign[- ]?in|log[- ]?in|security alert|statement|invoice|receipt|payment|transaction|balance|emi|credit card|debit|refund|kyc|due date|bill|delivery|shipped|track.*order|cashback|reward point|coins|streak|% off|\bsale\b|\bdeal\b|limited[- ]time|flash sale|buy now|shop now|job alert|jobs for you|new job|hiring|application (received|submitted)|booking confirm|itinerary|check[- ]in|appointment|you have earned|your.*expires|your.*due|your subscription|renew now)\b/i;
 
-// Transactional sender local-parts (the bit before @).
-const NEG_SENDER = /^(no-?reply|do-?not-?reply|donotreply|alert|alerts|notification|notifications|notify|billing|statements?|account|accounts|security|support|service|jobs|jobalerts|orders|info|mailer|bounce|email)\b/i;
+// Transactional sender local-part veto.
+const NEG_SENDER =
+  /^(no-?reply|do-?not-?reply|donotreply|alert|alerts|notification|notifications|notify|noreply|billing|statements?|account|accounts|security|support|service|jobs|jobalerts|orders|info|mailer|bounce|postmaster|admin|team|hello|hi|greetings|update|updates)\b/i;
 
 function domainMatches(domain: string, list: string[]): boolean {
-  return list.some((d) => domain === d || domain.endsWith("." + d) || domain.endsWith(d));
+  return list.some((d) => domain === d || domain.endsWith("." + d));
 }
 
 // Frequency from the median gap between consecutive emails — window-agnostic,
@@ -276,24 +345,29 @@ function parseMessage(msg: any): MsgMeta | null {
     score,
   });
 
-  // 1. Curated editorial newsletters — always keep, skip all vetoes.
+  // 1. Hard denylist — fintech/app/bank/delivery domains, never editorial.
+  if (domainMatches(domain, DOMAIN_DENYLIST)) return null;
+
+  // 2. Curated editorial newsletters — always keep, skip remaining vetoes.
   if (domainMatches(domain, EDITORIAL_ALLOW)) return keep(100);
 
-  // 2. Must have an unsubscribe header — baseline for any bulk/newsletter mail.
+  // 3. Must have an unsubscribe header — baseline for any bulk/newsletter mail.
   if (!hasUnsub) return null;
 
-  // 3. Positive editorial signals.
+  // 4. Transactional sender local-part veto (no-reply@, alerts@, etc.).
+  if (NEG_SENDER.test(localPart)) return null;
+
+  // 5. Score positive editorial signals — not a gate, just boosts confidence.
   const isEsp = domainMatches(domain, ESP_DOMAINS);
   const subjectEditorial = POS_SUBJECT.test(subject);
   const nameSaysNewsletter = /\bnewsletter\b/i.test(name);
-  const hasPositive = isEsp || subjectEditorial || nameSaysNewsletter;
-  if (!hasPositive) return null; // unsubscribe alone is not enough anymore
 
-  // 4. Negative veto — transactional / promo / job / alert content or sender.
+  // 6. Negative content veto — subject + snippet scanned for transactional signals.
   const content = `${subject} ${snippet}`;
   if (NEG_CONTENT.test(content)) return null;
-  if (NEG_SENDER.test(localPart)) return null;
 
+  // Any email reaching here has List-Unsubscribe + cleared all denylist/veto checks.
+  // That's sufficient evidence of a real newsletter — positive signals just boost score.
   let score = 1;
   if (isEsp) score += 4;
   if (subjectEditorial) score += 2;
@@ -301,32 +375,46 @@ function parseMessage(msg: any): MsgMeta | null {
   return keep(score);
 }
 
+// Fetch up to `max` message IDs matching `query`, following nextPageTokens so
+// we're not limited to a single 500-result page.
 async function listIds(query: string, token: string, max: number): Promise<string[]> {
-  const list = await getJson(
-    `${GMAIL}/messages?q=${encodeURIComponent(query)}&maxResults=${max}`,
-    token
-  );
-  return (list.messages ?? []).map((m: any) => m.id);
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  while (ids.length < max) {
+    const pageMax = Math.min(500, max - ids.length);
+    const url =
+      `${GMAIL}/messages?q=${encodeURIComponent(query)}&maxResults=${pageMax}` +
+      (pageToken ? `&pageToken=${pageToken}` : "");
+    const list = await getJson(url, token);
+    for (const m of list.messages ?? []) ids.push(m.id);
+    if (!list.nextPageToken || ids.length >= max) break;
+    pageToken = list.nextPageToken;
+  }
+  return ids;
 }
 
 // Scan recent mail and return detected newsletters grouped by sender.
 //
-// Two-pronged so curated newsletters are never missed:
-//   1. Broad pass over Gmail's "Updates" category (where bulk/editorial mail
-//      lands) — keeps the candidate pool small and on-topic, so weekly senders
-//      aren't pushed out by high-volume Primary mail.
-//   2. Targeted per-sender queries for the curated allowlist — guarantees
-//      James Clear / Shane Parrish / Sahil Bloom show up regardless of volume.
+// Single broad has:unsubscribe sweep covers Primary, Updates, Promotions, and
+// any other tab — category filters were excluding newsletters that Gmail routes
+// to Primary (common for newsletters the user has replied to or starred).
+// Targeted EDITORIAL_ALLOW queries guarantee curated senders even if they lack
+// the unsubscribe header or fall outside the 90-day window.
 export async function scanInbox(accessToken: string): Promise<Newsletter[]> {
-  const broad = await listIds("newer_than:120d category:updates", accessToken, 400);
+  // has:unsubscribe is a server-side Gmail filter covering ALL tabs/categories.
+  const broad = listIds("newer_than:90d has:unsubscribe", accessToken, 500);
 
-  const targeted = await pool(EDITORIAL_ALLOW, 6, (domain) =>
-    listIds(`from:${domain} newer_than:180d`, accessToken, 3)
+  // Guaranteed fetch for curated editorial senders regardless of Gmail tab.
+  const targeted = pool(EDITORIAL_ALLOW, 6, (domain) =>
+    listIds(`from:${domain} newer_than:90d`, accessToken, 5)
   );
 
-  const ids = Array.from(new Set([...broad, ...targeted.flat()]));
+  const [broadIds, targetedIds] = await Promise.all([broad, targeted]);
+  const ids = Array.from(new Set([...broadIds, ...targetedIds.flat()]));
 
-  const metas = await pool(ids.slice(0, 400), 8, (id) =>
+  // format=metadata returns snippet + the specified headers in payload.headers.
+  // format=minimal does NOT include payload/headers — only id/labels/snippet.
+  const metas = await pool(ids.slice(0, 600), 10, (id) =>
     getJson(
       `${GMAIL}/messages/${id}?format=metadata` +
         `&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe`,

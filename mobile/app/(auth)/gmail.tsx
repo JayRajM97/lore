@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
 import { useGoogleAuth, fetchGoogleUser } from "../../lib/auth";
 import { useAuth } from "../../store/authStore";
+import { signIntoFirebase } from "../../lib/firebaseAuth";
 
 export default function GmailConnect() {
   const router = useRouter();
@@ -16,11 +17,14 @@ export default function GmailConnect() {
   useEffect(() => {
     if (response?.type === "success") {
       const token = response.authentication?.accessToken;
+      const idToken = response.authentication?.idToken;
       if (!token) {
         setError("No access token returned.");
         setBusy(false);
         return;
       }
+      // Sign into Firebase so Storage security rules (request.auth != null) pass
+      signIntoFirebase(idToken, token);
       fetchGoogleUser(token)
         .then((user) => {
           setSession(user, token);

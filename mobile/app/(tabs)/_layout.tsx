@@ -8,6 +8,7 @@ const TABS = [
   { name: "home", label: "Home", icon: "⌂" },
   { name: "library", label: "Library", icon: "≣" },
   { name: "search", label: "Search", icon: "⌕" },
+  { name: "profile", label: "Profile", icon: "◎" },
 ] as const;
 
 // Pure custom tab bar — no @react-navigation/bottom-tabs internals.
@@ -48,6 +49,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="home" />
       <Tabs.Screen name="library" />
       <Tabs.Screen name="search" />
+      <Tabs.Screen name="profile" />
     </Tabs>
   );
 }

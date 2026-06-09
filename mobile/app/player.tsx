@@ -1,22 +1,37 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef } from "react";
 import {
-  GestureResponderEvent,
   LayoutChangeEvent,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePlayer } from "../store/playerStore";
-import { C, SPEEDS } from "../lib/theme";
+import { SPEEDS } from "../lib/theme";
 import { mmss } from "../lib/format";
 import { extractChapters, Chapter } from "../lib/lines";
 import Avatar from "../components/Avatar";
-import WaveformBars from "../components/WaveformBars";
 import LyricsView from "../components/LyricsView";
+
+// Derive a dark gradient-style color from the newsletter name
+function artBg(name: string): string {
+  const palette = ["#0d2818","#0d1828","#1a0d28","#28100d","#0d2828","#1a280d","#280d1a","#101028"];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return palette[Math.abs(h) % palette.length];
+}
+
+const BG    = "#000000";
+const CARD  = "#141414";
+const GREEN = "#22c55e";
+const TXT   = "#ffffff";
+const MUTED = "rgba(255,255,255,0.4)";
+const SURF  = "rgba(255,255,255,0.08)";
+const BORDER = "rgba(255,255,255,0.18)";
 
 export default function Player() {
   const router = useRouter();
@@ -34,16 +49,13 @@ export default function Player() {
     toggleLyrics,
   } = usePlayer();
 
-  const [trackW, setTrackW] = useState(0);
+  const trackW = useRef(0);
 
-  // Derive chapters from episode text + word timestamps.
   const chapters = useMemo<Chapter[]>(() => {
     if (!ep || !duration) return [];
-    const text = ep.tts_script ?? ep.raw_text ?? ep.subject;
-    return extractChapters(text, duration, ep.words);
+    return extractChapters(ep.tts_script ?? ep.raw_text ?? ep.subject, duration, ep.words);
   }, [ep?.id, duration]);
 
-  // Which chapter is active now?
   const activeChapter = useMemo(() => {
     if (!chapters.length) return -1;
     let idx = 0;
@@ -53,237 +65,253 @@ export default function Player() {
     return idx;
   }, [chapters, playbackPosition]);
 
-  if (!ep) {
-    router.back();
-    return null;
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  () => true,
+      onPanResponderGrant:   (e) => doSeek(e.nativeEvent.locationX),
+      onPanResponderMove:    (e) => doSeek(e.nativeEvent.locationX),
+      onPanResponderRelease: (e) => doSeek(e.nativeEvent.locationX),
+    })
+  ).current;
+
+  function doSeek(x: number) {
+    const w = trackW.current;
+    if (!w) return;
+    seek(Math.min(Math.max(x / w, 0), 1) * duration);
   }
 
-  const progress = duration > 0 ? playbackPosition / duration : 0;
-  const pct = Math.min(progress * 100, 100);
-
-  function scrub(e: GestureResponderEvent) {
-    if (!trackW) return;
-    const ratio = Math.min(Math.max(e.nativeEvent.locationX / trackW, 0), 1);
-    seek(ratio * duration);
+  function cycleSpeed() {
+    const idx = SPEEDS.indexOf(speed as typeof SPEEDS[number]);
+    setSpeed(SPEEDS[(idx + 1) % SPEEDS.length]);
   }
 
-  function seekChapter(delta: 1 | -1) {
-    const next = activeChapter + delta;
-    if (next >= 0 && next < chapters.length) {
-      seek(chapters[next].time);
-    } else if (delta === -1) {
-      seek(0);
-    }
+  if (!ep) return <Redirect href="/home" />;
+
+  if (lyricsOpen) {
+    return (
+      <LyricsView
+        text={ep.tts_script ?? ep.raw_text ?? ep.subject}
+        duration={duration}
+        words={ep.words}
+        episode={ep}
+        onClose={toggleLyrics}
+        playbackPosition={playbackPosition}
+        isPlaying={isPlaying}
+        speed={speed}
+        onTogglePlay={togglePlay}
+        onSkip={skip}
+        onSeek={seek}
+      />
+    );
   }
 
-  const lyricsText = ep.tts_script ?? ep.raw_text ?? ep.subject;
+  const pct = duration > 0 ? Math.min((playbackPosition / duration) * 100, 100) : 0;
+  const remaining = Math.max(0, duration - playbackPosition);
 
   return (
-    <SafeAreaView style={styles.wrap} edges={["top", "bottom"]}>
-      {/* header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.chevron}>⌄</Text>
-        </Pressable>
-        <Text style={styles.headerLabel}>
-          {lyricsOpen ? "LYRICS" : "NOW PLAYING"}
-        </Text>
-        <View style={{ width: 24 }} />
+    <View style={s.wrap}>
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: BG }}>
+        {/* ── top bar ── */}
+        <View style={s.topBar}>
+          <Pressable onPress={() => router.back()} style={s.iconCircle}>
+            <Text style={s.chevron}>⌄</Text>
+          </Pressable>
+          <View style={s.topCenter}>
+            <Text style={s.modeLabel}>NOW PLAYING</Text>
+          </View>
+          <Pressable style={s.iconCircle} onPress={() => {}}>
+            <Text style={s.volIcon}>🔊</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+
+      {/* ── artwork ── */}
+      <View style={s.artWrap}>
+        <View style={[s.artBox, { backgroundColor: artBg(ep.sender_name) }]}>
+          <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={100} />
+        </View>
       </View>
 
-      {/* body */}
-      {lyricsOpen ? (
-        <LyricsView text={lyricsText} duration={duration} words={ep.words} />
-      ) : (
-        <View style={styles.art}>
-          <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={80} />
-          <Text style={styles.sender}>{ep.sender_name}</Text>
-          <Text style={styles.title} numberOfLines={2}>{ep.subject}</Text>
-          <View style={{ marginTop: 24 }}>
-            <WaveformBars progress={progress} />
+      {/* ── episode info ── */}
+      <View style={s.info}>
+        <Text style={s.senderLabel}>{ep.sender_name.toUpperCase()}</Text>
+        <Text style={s.title} numberOfLines={2}>{ep.subject}</Text>
+        {chapters.length > 0 && activeChapter >= 0 && (
+          <Text style={s.chapterLabel}>{chapters[activeChapter].title}</Text>
+        )}
+      </View>
+
+      {/* ── scrubber ── */}
+      <View style={s.scrubWrap}>
+        <View
+          onLayout={(e: LayoutChangeEvent) => { trackW.current = e.nativeEvent.layout.width; }}
+          {...pan.panHandlers}
+          style={s.trackHit}
+        >
+          <View style={s.track} pointerEvents="none">
+            <View style={[s.fill, { width: `${pct}%` }]} />
+            {chapters.map((ch, i) => (
+              <View key={i} style={[
+                s.tick,
+                { left: `${duration > 0 ? (ch.time / duration) * 100 : 0}%` },
+                i === activeChapter && s.tickOn,
+              ]} />
+            ))}
+            <View style={[s.thumb, { left: `${pct}%` }]} />
           </View>
-          {/* Chapter list under waveform when chapters exist */}
-          {chapters.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chapterScroll}
-              contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}
-            >
-              {chapters.map((ch, i) => (
-                <Pressable
-                  key={i}
-                  onPress={() => seek(ch.time)}
-                  style={[styles.chapterPill, i === activeChapter && styles.chapterPillOn]}
-                >
-                  <Text style={[styles.chapterTime, i === activeChapter && styles.chapterTimeOn]}>
-                    {mmss(ch.time)}
-                  </Text>
-                  <Text style={[styles.chapterTitle, i === activeChapter && styles.chapterTitleOn]} numberOfLines={1}>
-                    {ch.title}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
+        </View>
+        <View style={s.timeRow}>
+          <Text style={s.timeText}>{mmss(playbackPosition)}</Text>
+          <Text style={s.timeText}>-{mmss(remaining)}</Text>
+        </View>
+      </View>
+
+      {/* ── main controls ── */}
+      <View style={s.controls}>
+        {/* speed */}
+        <Pressable onPress={cycleSpeed} style={s.pill}>
+          <Text style={s.pillTxt}>{speed}x</Text>
+        </Pressable>
+
+        {/* back 10 */}
+        <Pressable onPress={() => skip(-10)} style={s.skipWrap}>
+          <Text style={s.skipArc}>↩</Text>
+          <Text style={s.skipNum}>10</Text>
+        </Pressable>
+
+        {/* play / pause */}
+        <Pressable onPress={togglePlay} style={s.playBtn}>
+          <Text style={s.playIcon}>{isPlaying ? "❚❚" : "▶"}</Text>
+        </Pressable>
+
+        {/* forward 10 */}
+        <Pressable onPress={() => skip(10)} style={s.skipWrap}>
+          <Text style={s.skipArc}>↪</Text>
+          <Text style={s.skipNum}>10</Text>
+        </Pressable>
+
+        {/* CC / lyrics */}
+        <Pressable onPress={toggleLyrics} style={s.pill}>
+          <Text style={s.pillTxt}>CC</Text>
+        </Pressable>
+      </View>
+
+      {/* ── chapter list ── */}
+      {chapters.length > 0 && (
+        <View style={s.chSection}>
+          <Text style={s.chHeader}>CHAPTERS</Text>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 150 }}>
+            {chapters.map((ch, i) => (
+              <Pressable
+                key={i}
+                style={[s.chRow, i === activeChapter && s.chRowOn]}
+                onPress={() => seek(ch.time)}
+              >
+                <View style={[s.chDot, i === activeChapter && s.chDotOn]} />
+                <Text style={s.chTime}>{mmss(ch.time)}</Text>
+                <Text style={[s.chTitle, i === activeChapter && s.chTitleOn]} numberOfLines={1}>
+                  {ch.title}
+                </Text>
+                {i === activeChapter && <Text style={s.nowTag}>NOW</Text>}
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
       )}
 
-      {/* controls */}
-      <View style={[styles.controls, lyricsOpen && styles.controlsOnLyrics]}>
-
-        {/* scrubber with chapter tick marks */}
-        <Pressable
-          onLayout={(e: LayoutChangeEvent) => setTrackW(e.nativeEvent.layout.width)}
-          onPress={scrub}
-          style={styles.trackHit}
-        >
-          <View style={styles.track}>
-            <View style={[styles.fill, { width: `${pct}%` }]} />
-            {/* chapter ticks */}
-            {chapters.map((ch, i) => {
-              const pos = duration > 0 ? (ch.time / duration) * 100 : 0;
-              return (
-                <View
-                  key={i}
-                  style={[
-                    styles.chapterTick,
-                    { left: `${pos}%` },
-                    i === activeChapter && styles.chapterTickActive,
-                  ]}
-                />
-              );
-            })}
-            <View style={[styles.thumb, { left: `${pct}%` }]} />
-          </View>
-        </Pressable>
-
-        {/* time + chapter name */}
-        <View style={styles.timeRow}>
-          <Text style={styles.time}>{mmss(playbackPosition)}</Text>
-          {chapters.length > 0 && (
-            <Text style={styles.chapterCurrent} numberOfLines={1}>
-              {chapters[activeChapter]?.title ?? ""}
-            </Text>
-          )}
-          <Text style={styles.time}>{mmss(duration)}</Text>
-        </View>
-
-        {/* transport: prev-chapter | -15 | play | +15 | next-chapter */}
-        <View style={styles.row}>
-          {chapters.length > 0 ? (
-            <Pressable onPress={() => seekChapter(-1)} hitSlop={8}>
-              <Text style={styles.chapterNav}>⏮</Text>
-            </Pressable>
-          ) : (
-            <View style={{ width: 28 }} />
-          )}
-          <Pressable onPress={() => skip(-15)} hitSlop={8}>
-            <Text style={styles.skip}>-15</Text>
-          </Pressable>
-          <Pressable onPress={togglePlay} style={styles.play}>
-            <Text style={styles.playIcon}>{isPlaying ? "❚❚" : "▶"}</Text>
-          </Pressable>
-          <Pressable onPress={() => skip(15)} hitSlop={8}>
-            <Text style={styles.skip}>+15</Text>
-          </Pressable>
-          {chapters.length > 0 ? (
-            <Pressable onPress={() => seekChapter(1)} hitSlop={8}>
-              <Text style={styles.chapterNav}>⏭</Text>
-            </Pressable>
-          ) : (
-            <View style={{ width: 28 }} />
-          )}
-        </View>
-
-        <View style={styles.speeds}>
-          {SPEEDS.map((s) => (
-            <Pressable
-              key={s}
-              onPress={() => setSpeed(s)}
-              style={[styles.pill, s === speed && styles.pillOn]}
-            >
-              <Text style={[styles.pillText, s === speed && styles.pillTextOn]}>{s}x</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.iconRow}>
-          <Pressable onPress={toggleLyrics} hitSlop={8}>
-            <Text style={[styles.iconBtn, lyricsOpen && { color: C.teal }]}>≡ Lyrics</Text>
-          </Pressable>
-        </View>
-      </View>
-    </SafeAreaView>
+      <SafeAreaView edges={["bottom"]} style={{ backgroundColor: BG }} />
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: C.bg },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 8 },
-  chevron: { fontSize: 28, color: C.ink, lineHeight: 28 },
-  headerLabel: { fontSize: 12, letterSpacing: 1.4, color: C.muted },
-  art: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 8 },
-  sender: { fontSize: 14, color: C.muted, marginTop: 12 },
-  title: { fontSize: 18, fontWeight: "500", color: C.ink, textAlign: "center" },
+const s = StyleSheet.create({
+  wrap: { flex: 1, backgroundColor: BG },
 
-  // chapter horizontal pill list
-  chapterScroll: { marginTop: 20, maxHeight: 70 },
-  chapterPill: {
-    backgroundColor: C.surface,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minWidth: 80,
-    maxWidth: 160,
-    borderWidth: 1,
-    borderColor: C.border,
+  topBar: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20, paddingVertical: 12,
   },
-  chapterPillOn: { backgroundColor: C.teal50, borderColor: C.teal },
-  chapterTime: { fontSize: 11, color: C.muted, fontVariant: ["tabular-nums"] },
-  chapterTimeOn: { color: C.teal },
-  chapterTitle: { fontSize: 12, fontWeight: "500", color: C.ink, marginTop: 2 },
-  chapterTitleOn: { color: C.teal },
-
-  controls: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 16, gap: 12 },
-  controlsOnLyrics: { backgroundColor: "rgba(0,0,0,0.3)" },
-
-  // scrubber
-  trackHit: { height: 28, justifyContent: "center" },
-  track: { height: 4, borderRadius: 2, backgroundColor: C.border, position: "relative" },
-  fill: { position: "absolute", height: 4, borderRadius: 2, backgroundColor: C.teal, top: 0, left: 0 },
-  thumb: { position: "absolute", width: 14, height: 14, borderRadius: 7, backgroundColor: C.teal, top: -5, marginLeft: -7 },
-
-  // chapter tick marks on scrubber
-  chapterTick: {
-    position: "absolute",
-    width: 2,
-    height: 10,
-    borderRadius: 1,
-    backgroundColor: C.muted,
-    top: -3,
-    marginLeft: -1,
-    opacity: 0.5,
+  iconCircle: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: SURF, alignItems: "center", justifyContent: "center",
   },
-  chapterTickActive: { backgroundColor: C.teal, opacity: 1 },
+  chevron: { fontSize: 22, color: TXT, lineHeight: 24, marginTop: 2 },
+  volIcon: { fontSize: 16 },
+  topCenter: { flex: 1, alignItems: "center" },
+  modeLabel: { fontSize: 11, color: MUTED, letterSpacing: 1.8, fontWeight: "600" },
 
-  // time row
-  timeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  time: { fontSize: 13, color: C.muted, fontVariant: ["tabular-nums"] },
-  chapterCurrent: { flex: 1, fontSize: 12, color: C.teal, textAlign: "center", paddingHorizontal: 8 },
+  artWrap: { alignItems: "center", paddingVertical: 24 },
+  artBox: {
+    width: 280, height: 280, borderRadius: 20,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.8,
+    shadowRadius: 40, shadowOffset: { width: 0, height: 20 },
+  },
 
-  // transport
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 24 },
-  skip: { fontSize: 14, color: C.ink, fontVariant: ["tabular-nums"], width: 32, textAlign: "center" },
-  chapterNav: { fontSize: 20, color: C.ink, width: 28, textAlign: "center" },
-  play: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.teal, alignItems: "center", justifyContent: "center" },
-  playIcon: { color: C.white, fontSize: 22 },
+  info: { alignItems: "center", paddingHorizontal: 32, gap: 6 },
+  senderLabel: { fontSize: 12, fontWeight: "700", color: GREEN, letterSpacing: 1.5 },
+  title: { fontSize: 20, fontWeight: "700", color: TXT, textAlign: "center", lineHeight: 28 },
+  chapterLabel: { fontSize: 14, color: MUTED, textAlign: "center" },
 
-  speeds: { flexDirection: "row", justifyContent: "center", gap: 8 },
-  pill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 100, backgroundColor: C.surface },
-  pillOn: { backgroundColor: C.amber50 },
-  pillText: { fontSize: 13, color: "#444441" },
-  pillTextOn: { color: C.amber, fontWeight: "500" },
-  iconRow: { flexDirection: "row", justifyContent: "center", paddingTop: 2 },
-  iconBtn: { fontSize: 14, color: C.muted },
+  scrubWrap: { paddingHorizontal: 24, marginTop: 22, gap: 8 },
+  trackHit: { height: 30, justifyContent: "center" },
+  track: { height: 3, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.1)", position: "relative" },
+  fill: { position: "absolute", height: 3, borderRadius: 2, backgroundColor: GREEN, top: 0, left: 0 },
+  thumb: {
+    position: "absolute", width: 14, height: 14, borderRadius: 7,
+    backgroundColor: TXT, top: -6, marginLeft: -7,
+  },
+  tick: {
+    position: "absolute", width: 2, height: 8, borderRadius: 1,
+    backgroundColor: "rgba(255,255,255,0.15)", top: -3, marginLeft: -1,
+  },
+  tickOn: { backgroundColor: GREEN, opacity: 0.8 },
+  timeRow: { flexDirection: "row", justifyContent: "space-between" },
+  timeText: { fontSize: 12, color: MUTED, fontVariant: ["tabular-nums"] },
+
+  controls: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 28, paddingVertical: 20,
+  },
+  pill: {
+    minWidth: 52, height: 32, borderRadius: 6,
+    borderWidth: 1.5, borderColor: BORDER,
+    alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  pillTxt: { fontSize: 13, color: TXT, fontWeight: "700" },
+  skipWrap: { alignItems: "center", gap: 2 },
+  skipArc: { fontSize: 28, color: TXT },
+  skipNum: { fontSize: 11, color: MUTED, marginTop: -4 },
+  playBtn: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: GREEN, alignItems: "center", justifyContent: "center",
+    shadowColor: GREEN, shadowOpacity: 0.5, shadowRadius: 20, shadowOffset: { width: 0, height: 6 },
+  },
+  playIcon: { color: "#000", fontSize: 28 },
+
+  chSection: {
+    marginHorizontal: 20, borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    paddingTop: 12, gap: 6,
+  },
+  chHeader: { fontSize: 10, fontWeight: "600", color: MUTED, letterSpacing: 1.4 },
+  chRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8,
+  },
+  chRowOn: { backgroundColor: "rgba(34,197,94,0.1)" },
+  chDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.15)" },
+  chDotOn: { backgroundColor: GREEN, width: 8, height: 8, borderRadius: 4 },
+  chTime: { fontSize: 12, color: MUTED, fontVariant: ["tabular-nums"], width: 36 },
+  chTitle: { flex: 1, fontSize: 13, color: MUTED },
+  chTitleOn: { color: TXT, fontWeight: "600" },
+  nowTag: {
+    fontSize: 9, fontWeight: "700", color: GREEN,
+    backgroundColor: "rgba(34,197,94,0.12)",
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, letterSpacing: 0.8,
+  },
 });

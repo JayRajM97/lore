@@ -4,4 +4,5 @@ numpy
 fastapi
 uvicorn[standard]
 pydantic
+firebase-admin
 # Kokoro pulls torch + misaki (G2P). System deps: ffmpeg + espeak-ng (see README).

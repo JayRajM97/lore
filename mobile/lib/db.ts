@@ -49,15 +49,16 @@ export async function unfollow(userId: string, newsletterId: string) {
 // ── generated episodes ──────────────────────────────────────────────────────
 // users/{userId}/episodes/{episodeId}
 //
-// NOTE: audio_url points at the sidecar's /tmp file (ephemeral — gone on sidecar
-// restart). We persist the metadata + text + word timings so the Library always
-// lists what was generated; stale audio can be re-synthesized later from raw_text.
+// words[] is NOT stored inline — a 2500-word newsletter produces ~2500 timestamp
+// objects (~100KB), which approaches Firestore's 1MB doc limit and is wasteful.
+// Words are kept in-memory (globalThis.__lore_episodes) for the current session;
+// lyrics fall back to linear interpolation on reload, which is acceptable.
 function episodesCol(userId: string) {
   return collection(db, "users", userId, "episodes");
 }
 
 export async function saveEpisodes(userId: string, episodes: Episode[]) {
-  await Promise.all(
+  const results = await Promise.allSettled(
     episodes.map((e) =>
       setDoc(doc(episodesCol(userId), e.id), {
         newsletter_id: e.newsletter_id,
@@ -68,13 +69,18 @@ export async function saveEpisodes(userId: string, episodes: Episode[]) {
         audio_url: e.audio_url,
         audio_duration_s: e.audio_duration_s,
         received_at: e.received_at,
-        words: e.words ?? null,
         word_count: e.word_count ?? null,
         generation_time_ms: e.generation_time_ms ?? null,
         created_at: serverTimestamp(),
+        // words excluded — too large for inline doc; session-only
       })
     )
   );
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length) {
+    console.error(`saveEpisodes: ${failed.length} failed`, failed);
+    throw new Error(`Firestore: ${failed.length}/${episodes.length} episode saves failed`);
+  }
 }
 
 export async function getEpisodes(userId: string): Promise<Episode[]> {

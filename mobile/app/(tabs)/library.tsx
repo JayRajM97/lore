@@ -77,8 +77,8 @@ export default function Library() {
           renderItem={({ item }) => (
             <EpisodeCard
               episode={item}
-              onPressBody={() => play(item)}
-              onPressPlay={() => play(item)}
+              onPressBody={() => { play(item); router.push("/player"); }}
+              onPressPlay={() => { play(item); router.push("/player"); }}
             />
           )}
         />

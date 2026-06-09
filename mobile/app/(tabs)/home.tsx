@@ -1,141 +1,415 @@
 import { useEffect, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
-import { Episode } from "../../lib/types";
-import { greeting, mmss } from "../../lib/format";
-import { getEpisodes } from "../../lib/db";
+import { Episode, Newsletter } from "../../lib/types";
+import { greeting, humanDuration, mmss, relativeDate } from "../../lib/format";
+import { getEpisodes, getFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
-import EpisodeCard from "../../components/EpisodeCard";
 import Avatar from "../../components/Avatar";
+
+const MAX_W = 720;
 
 export default function Home() {
   const router = useRouter();
-  const play = usePlayer((s) => s.play);
   const user = useAuth((s) => s.user);
-  const [feed, setFeed] = useState<Episode[]>([]);
+  const accessToken = useAuth((s) => s.accessToken);
+  const play = usePlayer((s) => s.play);
+
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [follows, setFollows] = useState<Newsletter[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    // Real episodes only — no mock fallback. Prefer this session's freshly
-    // generated episodes; otherwise load persisted ones from Firestore so the
-    // feed survives reload.
-    const session: Episode[] = (globalThis as any).__lore_episodes ?? [];
-    if (session.length) {
-      setFeed(session);
+    const load = async () => {
+      const [firestoreEps, fol] = await Promise.all([
+        user ? getEpisodes(user.sub).catch(() => [] as Episode[]) : Promise.resolve([] as Episode[]),
+        user ? getFollows(user.sub).catch(() => [] as Newsletter[]) : Promise.resolve([] as Newsletter[]),
+      ]);
+      // Session episodes that haven't been flushed to Firestore yet (still generating)
+      const sessionEps: Episode[] = (globalThis as any).__lore_episodes ?? [];
+      const inFirestore = new Set(firestoreEps.map((e) => e.id));
+      const sessionOnly = sessionEps.filter((e) => !inFirestore.has(e.id));
+      setEpisodes([...firestoreEps, ...sessionOnly]);
+      setFollows(fol);
       setLoaded(true);
-      return;
-    }
-    if (!user) {
-      setLoaded(true);
-      return;
-    }
-    getEpisodes(user.sub)
-      .then((eps) => setFeed(eps))
-      .catch((e) => console.error("home feed load failed", e))
-      .finally(() => setLoaded(true));
+    };
+    load();
   }, [user]);
-
-  const continueEp = feed.find(
-    (e) => (e.playback_position_s ?? 0) > 0 && !e.is_completed
-  );
 
   function openPlayer(ep: Episode) {
     play(ep);
     router.push("/player");
   }
 
-  if (loaded && feed.length === 0) {
+  const featured = episodes[0] ?? null;
+  const upNext = episodes.slice(1, 4);
+  const latest = episodes.slice(1);
+
+  const gmailConnected = !!user;
+
+  // ── EMPTY STATE ──
+  if (loaded && !gmailConnected) {
     return (
       <SafeAreaView style={styles.wrap} edges={["top"]}>
-        <Empty onDiscover={() => router.push("/(auth)/scan")} />
+        <EmptyDashboard onConnect={() => router.push("/(auth)/gmail")} />
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.wrap} edges={["top"]}>
-      <FlatList
-        data={feed}
-        keyExtractor={(e) => e.id}
-        contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 24 }}
-        ListHeaderComponent={
-          <View style={{ gap: 16, marginBottom: 6 }}>
-            <Text style={styles.greeting}>{greeting()}</Text>
-            {continueEp && (
+  if (loaded && episodes.length === 0) {
+    return (
+      <SafeAreaView style={styles.wrap} edges={["top"]}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          <View style={styles.inner}>
+            <View style={styles.header}>
               <View>
-                <Text style={styles.section}>Continue Listening</Text>
-                <ContinueCard ep={continueEp} onResume={() => openPlayer(continueEp)} />
+                <Text style={styles.greeting}>{greeting()}</Text>
+                {user && <Text style={styles.userName}>{user.name}</Text>}
+              </View>
+              <Pressable style={styles.addBtn} onPress={() => router.push("/(auth)/scan")}>
+                <Text style={styles.addBtnText}>+ Add</Text>
+              </Pressable>
+            </View>
+            {!accessToken && (
+              <Pressable style={styles.tokenBanner} onPress={() => router.push("/(auth)/gmail")}>
+                <Text style={styles.tokenText}>Reconnect Gmail to generate new episodes →</Text>
+              </Pressable>
+            )}
+            {/* Newsletter row */}
+            {follows.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>MY NEWSLETTERS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                  {follows.map((nl) => (
+                    <Pressable key={nl.id} style={styles.nlPill}
+                      onPress={() => router.push(`/newsletter/${encodeURIComponent(nl.id)}`)}>
+                      <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={32} />
+                      <Text style={styles.nlPillName} numberOfLines={1}>{nl.sender_name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               </View>
             )}
-            <Text style={styles.section}>Latest Episodes</Text>
+            <View style={styles.emptyPodcasts}>
+              <Text style={styles.emptyIcon}>🎧</Text>
+              <Text style={styles.emptyTitle}>No podcasts yet</Text>
+              <Text style={styles.emptySub}>Select newsletters and generate audio to fill your feed.</Text>
+              <Pressable style={styles.generateBtn} onPress={() => router.push("/(auth)/scan")}>
+                <Text style={styles.generateBtnText}>Generate podcasts</Text>
+              </Pressable>
+            </View>
           </View>
-        }
-        renderItem={({ item }) => (
-          <EpisodeCard
-            episode={item}
-            onPressBody={() => router.push(`/newsletter/${item.newsletter_id}`)}
-            onPressPlay={() => {
-              play(item);
-            }}
-          />
-        )}
-      />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── POPULATED STATE ──
+  return (
+    <SafeAreaView style={styles.wrap} edges={["top"]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <View style={styles.inner}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.greeting}>{greeting()}</Text>
+              {user && <Text style={styles.userName}>{user.name}</Text>}
+            </View>
+            <Pressable style={styles.addBtn} onPress={() => router.push("/(auth)/scan")}>
+              <Text style={styles.addBtnText}>+ Add</Text>
+            </Pressable>
+          </View>
+
+          {!accessToken && (
+            <Pressable style={styles.tokenBanner} onPress={() => router.push("/(auth)/gmail")}>
+              <Text style={styles.tokenText}>Reconnect Gmail to generate new episodes →</Text>
+            </Pressable>
+          )}
+
+          {/* Featured episode — large card */}
+          {featured && (
+            <View style={styles.featuredCard}>
+              {/* newsletter label */}
+              <View style={styles.featuredTop}>
+                <View style={styles.featuredSource}>
+                  <Avatar name={featured.sender_name} url={featured.sender_logo_url} size={20} />
+                  <Text style={styles.featuredSourceName}>{featured.sender_name.toUpperCase()}</Text>
+                  <Text style={styles.featuredDot}>·</Text>
+                  <Text style={styles.featuredDuration}>{humanDuration(featured.audio_duration_s)}</Text>
+                </View>
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>New</Text>
+                </View>
+              </View>
+              <Text style={styles.featuredTitle} numberOfLines={3}>{featured.subject}</Text>
+              {featured.raw_text && (
+                <Text style={styles.featuredPreview} numberOfLines={2}>
+                  {featured.raw_text.slice(0, 120)}…
+                </Text>
+              )}
+              <Pressable style={styles.playNowBtn} onPress={() => openPlayer(featured)}>
+                <Text style={styles.playNowIcon}>▶</Text>
+                <Text style={styles.playNowText}>Play Now</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* Up Next row */}
+          {upNext.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionHeading}>Up Next</Text>
+                <Pressable onPress={() => router.push("/library")}>
+                  <Text style={styles.viewAll}>View All</Text>
+                </Pressable>
+              </View>
+              <View style={styles.upNextList}>
+                {upNext.map((ep) => (
+                  <Pressable key={ep.id} style={styles.upNextRow} onPress={() => openPlayer(ep)}>
+                    <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
+                      <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
+                    </View>
+                    <View style={styles.readyTag}>
+                      <Text style={styles.readyTagText}>READY</Text>
+                    </View>
+                    <Text style={styles.upNextDur}>{humanDuration(ep.audio_duration_s)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Latest Converted grid */}
+          {latest.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionHeading}>Latest Converted</Text>
+                <Pressable onPress={() => router.push("/library")}>
+                  <Text style={styles.viewAll}>View All</Text>
+                </Pressable>
+              </View>
+              <View style={styles.latestGrid}>
+                {latest.slice(0, 6).map((ep) => (
+                  <Pressable key={ep.id} style={styles.latestCard} onPress={() => openPlayer(ep)}>
+                    <Text style={styles.latestSource} numberOfLines={1}>
+                      {ep.sender_name.toUpperCase()}
+                    </Text>
+                    <Text style={styles.latestTitle} numberOfLines={3}>{ep.subject}</Text>
+                    {ep.raw_text && (
+                      <Text style={styles.latestPreview} numberOfLines={2}>
+                        {ep.raw_text.slice(0, 80)}…
+                      </Text>
+                    )}
+                    <View style={styles.latestMeta}>
+                      <Text style={styles.latestDur}>⏱ {humanDuration(ep.audio_duration_s)}</Text>
+                      <Pressable onPress={() => openPlayer(ep)}>
+                        <View style={styles.latestPlayBtn}>
+                          <Text style={styles.latestPlayIcon}>▶</Text>
+                        </View>
+                      </Pressable>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* My Newsletters row */}
+          {follows.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionHeading}>My Newsletters</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                {follows.map((nl) => (
+                  <Pressable key={nl.id} style={styles.nlPill}
+                    onPress={() => router.push(`/newsletter/${encodeURIComponent(nl.id)}`)}>
+                    <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={32} />
+                    <Text style={styles.nlPillName} numberOfLines={1}>{nl.sender_name}</Text>
+                  </Pressable>
+                ))}
+                <Pressable style={[styles.nlPill, styles.nlAddPill]} onPress={() => router.push("/(auth)/scan")}>
+                  <View style={styles.nlAddCircle}><Text style={styles.nlAddPlus}>+</Text></View>
+                  <Text style={styles.nlPillName}>Add more</Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-function ContinueCard({ ep, onResume }: { ep: Episode; onResume: () => void }) {
-  const progress = ep.audio_duration_s ? (ep.playback_position_s ?? 0) / ep.audio_duration_s : 0;
+function EmptyDashboard({ onConnect }: { onConnect: () => void }) {
   return (
-    <Pressable style={styles.continueCard} onPress={onResume}>
-      <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={48} />
-      <View style={{ flex: 1, gap: 4 }}>
-        <Text style={styles.continueTitle} numberOfLines={1}>{ep.subject}</Text>
-        <Text style={styles.continueMeta}>
-          {mmss(ep.playback_position_s ?? 0)} / {mmss(ep.audio_duration_s)}
-        </Text>
-        <View style={styles.cTrack}>
-          <View style={[styles.cFill, { width: `${progress * 100}%` }]} />
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <View style={styles.inner}>
+        <View style={styles.emptyHero}>
+          <View style={styles.emptyHeroIcon}><Text style={{ fontSize: 36 }}>📖</Text></View>
+          <Text style={styles.emptyHeroTitle}>Your library is{"\n"}whispering...</Text>
+          <Text style={styles.emptyHeroSub}>
+            It looks a bit quiet in here! Lore works best when it's filled
+            with the stories, essays, and newsletters you love.
+          </Text>
+        </View>
+        <View style={styles.cards}>
+          <Pressable style={styles.gmailCard} onPress={onConnect}>
+            <Text style={styles.cardIconLabel}>✉</Text>
+            <Text style={styles.cardTitle}>Connect Gmail</Text>
+            <Text style={styles.cardSub}>We'll scan for newsletter subscriptions and turn them into your personal audio feed.</Text>
+            <View style={styles.gmailBtn}><Text style={styles.gmailBtnText}>Connect Account →</Text></View>
+          </Pressable>
+          <Pressable style={styles.discoverCard} onPress={onConnect}>
+            <Text style={[styles.cardIconLabel, { color: C.ink }]}>◎</Text>
+            <Text style={[styles.cardTitle, { color: C.ink }]}>Discover New</Text>
+            <Text style={[styles.cardSub, { color: C.muted }]}>Connect Gmail and we'll find the best newsletters already in your inbox.</Text>
+            <View style={styles.discoverBtn}><Text style={styles.discoverBtnText}>Get Started ✦</Text></View>
+          </Pressable>
+        </View>
+        <View style={{ gap: 8 }}>
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionHeading}>Latest for You</Text>
+            <Text style={styles.nothingYet}>NOTHING HERE YET</Text>
+          </View>
+          <View style={styles.placeholderRow}>
+            <View style={styles.placeholderCard} />
+            <View style={styles.placeholderCard} />
+          </View>
         </View>
       </View>
-      <View style={styles.resume}>
-        <Text style={styles.resumeIcon}>▶</Text>
-      </View>
-    </Pressable>
-  );
-}
-
-function Empty({ onDiscover }: { onDiscover: () => void }) {
-  return (
-    <View style={styles.empty}>
-      <Text style={styles.emptyArt}>📭</Text>
-      <Text style={styles.emptyText}>Your feed is empty.</Text>
-      <Text style={styles.emptySub}>Follow some newsletters to get started.</Text>
-      <Pressable style={styles.emptyCta} onPress={onDiscover}>
-        <Text style={styles.emptyCtaText}>Find newsletters</Text>
-      </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
-  greeting: { fontSize: 18, fontWeight: "500", color: C.ink },
-  section: { fontSize: 13, fontWeight: "500", color: C.muted, textTransform: "uppercase", letterSpacing: 0.6 },
-  continueCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.surface, borderRadius: 12, padding: 14, marginTop: 8 },
-  continueTitle: { fontSize: 15, fontWeight: "500", color: C.ink },
-  continueMeta: { fontSize: 12, color: C.muted, fontVariant: ["tabular-nums"] },
-  cTrack: { height: 3, backgroundColor: C.border, borderRadius: 100, marginTop: 2 },
-  cFill: { height: 3, backgroundColor: C.teal },
-  resume: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.teal, alignItems: "center", justifyContent: "center" },
-  resumeIcon: { color: C.white, fontSize: 16, marginLeft: 2 },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, padding: 32 },
-  emptyArt: { fontSize: 48 },
-  emptyText: { fontSize: 17, fontWeight: "500", color: C.ink },
-  emptySub: { fontSize: 15, color: C.muted, textAlign: "center" },
-  emptyCta: { marginTop: 12, backgroundColor: C.teal, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
-  emptyCtaText: { color: C.teal50, fontWeight: "600" },
+  scroll: { paddingBottom: 40 },
+  inner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", padding: 16, gap: 24 },
+
+  header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  greeting: { fontSize: 22, fontWeight: "700", color: C.ink, letterSpacing: -0.3 },
+  userName: { fontSize: 14, color: C.muted, marginTop: 2 },
+  addBtn: { backgroundColor: C.teal, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 8 },
+  addBtnText: { color: C.white, fontWeight: "600", fontSize: 14 },
+
+  tokenBanner: { backgroundColor: C.amber50, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: C.amber },
+  tokenText: { fontSize: 13, color: C.amber, textAlign: "center" },
+
+  section: { gap: 12 },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionLabel: { fontSize: 12, fontWeight: "600", color: C.muted, letterSpacing: 1.2 },
+  sectionHeading: { fontSize: 20, fontWeight: "700", color: C.ink, letterSpacing: -0.2 },
+  viewAll: { fontSize: 13, color: C.teal, fontWeight: "600" },
+  nothingYet: { fontSize: 11, color: C.muted, letterSpacing: 0.8 },
+
+  // featured card
+  featuredCard: {
+    backgroundColor: C.ink, borderRadius: 20, padding: 20, gap: 12,
+  },
+  featuredTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  featuredSource: { flexDirection: "row", alignItems: "center", gap: 6 },
+  featuredSourceName: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.6)", letterSpacing: 0.8 },
+  featuredDot: { color: "rgba(255,255,255,0.3)", fontSize: 12 },
+  featuredDuration: { fontSize: 11, color: "rgba(255,255,255,0.5)" },
+  newBadge: { backgroundColor: C.teal, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 3 },
+  newBadgeText: { fontSize: 11, fontWeight: "700", color: C.white },
+  featuredTitle: { fontSize: 26, fontWeight: "800", color: C.white, lineHeight: 32, letterSpacing: -0.4 },
+  featuredPreview: { fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 20 },
+  playNowBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.teal, borderRadius: 12,
+    paddingVertical: 14, paddingHorizontal: 20, alignSelf: "flex-start",
+  },
+  playNowIcon: { color: C.white, fontSize: 14 },
+  playNowText: { color: C.white, fontWeight: "700", fontSize: 15 },
+
+  // up next
+  upNextList: { gap: 8 },
+  upNextRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: C.white, borderRadius: 12,
+    borderWidth: 0.5, borderColor: C.border, padding: 12,
+  },
+  upNextSender: { fontSize: 12, color: C.muted },
+  upNextTitle: { fontSize: 14, fontWeight: "500", color: C.ink },
+  readyTag: { backgroundColor: C.teal50, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  readyTagText: { fontSize: 9, fontWeight: "700", color: C.teal, letterSpacing: 0.5 },
+  upNextDur: { fontSize: 12, color: C.muted },
+
+  // latest converted grid
+  latestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  latestCard: {
+    width: "47%", backgroundColor: C.white, borderRadius: 14,
+    borderWidth: 0.5, borderColor: C.border, padding: 14, gap: 6,
+  },
+  latestSource: { fontSize: 10, fontWeight: "700", color: C.teal, letterSpacing: 0.8 },
+  latestTitle: { fontSize: 14, fontWeight: "700", color: C.ink, lineHeight: 19 },
+  latestPreview: { fontSize: 12, color: C.muted, lineHeight: 16 },
+  latestMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  latestDur: { fontSize: 12, color: C.muted },
+  latestPlayBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    borderWidth: 1.5, borderColor: C.teal,
+    alignItems: "center", justifyContent: "center",
+  },
+  latestPlayIcon: { fontSize: 10, color: C.teal, marginLeft: 1 },
+
+  // newsletter pills
+  nlPill: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.white, borderRadius: 100,
+    borderWidth: 0.5, borderColor: C.border,
+    paddingVertical: 6, paddingHorizontal: 12,
+  },
+  nlPillName: { fontSize: 13, fontWeight: "500", color: C.ink },
+  nlAddPill: { borderStyle: "dashed" },
+  nlAddCircle: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: C.surface, alignItems: "center", justifyContent: "center",
+  },
+  nlAddPlus: { fontSize: 18, color: C.muted },
+
+  // empty states
+  emptyPodcasts: { alignItems: "center", gap: 8, paddingVertical: 32 },
+  emptyIcon: { fontSize: 40 },
+  emptyTitle: { fontSize: 17, fontWeight: "600", color: C.ink },
+  emptySub: { fontSize: 14, color: C.muted, textAlign: "center" },
+  generateBtn: { marginTop: 8, backgroundColor: C.teal, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  generateBtnText: { color: C.white, fontWeight: "600" },
+
+  // empty dashboard
+  emptyHero: { alignItems: "center", gap: 12, paddingVertical: 8 },
+  emptyHeroIcon: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: C.teal, alignItems: "center", justifyContent: "center",
+  },
+  emptyHeroTitle: {
+    fontSize: 30, fontWeight: "800", color: C.ink,
+    textAlign: "center", letterSpacing: -0.4, lineHeight: 36,
+  },
+  emptyHeroSub: { fontSize: 14, color: C.muted, textAlign: "center", lineHeight: 20 },
+
+  cards: { flexDirection: "row", gap: 12 },
+  gmailCard: { flex: 1, backgroundColor: C.ink, borderRadius: 16, padding: 16, gap: 8 },
+  discoverCard: { flex: 1, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16, gap: 8 },
+  cardIconLabel: { fontSize: 22, color: C.white },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: C.white },
+  cardSub: { fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 17 },
+  gmailBtn: { backgroundColor: C.teal, borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
+  gmailBtnText: { color: C.white, fontWeight: "700", fontSize: 13 },
+  discoverBtn: { borderWidth: 1.5, borderColor: C.indigo, borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
+  discoverBtnText: { color: C.indigo, fontWeight: "700", fontSize: 13 },
+
+  placeholderRow: { flexDirection: "row", gap: 12 },
+  placeholderCard: { flex: 1, height: 110, borderRadius: 14, backgroundColor: C.surface, borderWidth: 0.5, borderColor: C.border },
 });
