@@ -27,6 +27,7 @@ export default function Home() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [follows, setFollows] = useState<Newsletter[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [showReadyBanner, setShowReadyBanner] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -41,6 +42,11 @@ export default function Home() {
       setEpisodes([...firestoreEps, ...sessionOnly]);
       setFollows(fol);
       setLoaded(true);
+      if ((globalThis as any).__lore_just_generated) {
+        (globalThis as any).__lore_just_generated = false;
+        setShowReadyBanner(true);
+        setTimeout(() => setShowReadyBanner(false), 4000);
+      }
     };
     load();
   }, [user]);
@@ -115,6 +121,13 @@ export default function Home() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <View style={styles.inner}>
           <HomeHeader user={user} onSettings={() => router.push("/profile")} />
+
+          {showReadyBanner && (
+            <View style={styles.readyBanner}>
+              <Text style={styles.readyBannerIcon}>✓</Text>
+              <Text style={styles.readyBannerText}>Your audio is ready to listen</Text>
+            </View>
+          )}
 
           {!accessToken && (
             <Pressable style={styles.tokenBanner} onPress={() => router.push("/(auth)/gmail")}>
@@ -300,6 +313,10 @@ const styles = StyleSheet.create({
   headerLogo: { fontSize: 20, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
   settingsBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 0.5, borderColor: C.border },
   settingsIcon: { fontSize: 16, color: C.muted },
+
+  readyBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.teal50, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.teal },
+  readyBannerIcon: { fontSize: 16, color: C.teal },
+  readyBannerText: { fontSize: 14, fontWeight: "600", color: C.teal },
 
   tokenBanner: { backgroundColor: C.amber50, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: C.amber },
   tokenText: { fontSize: 13, color: C.amber, textAlign: "center" },

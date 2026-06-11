@@ -102,6 +102,7 @@ export default function Player() {
         onTogglePlay={togglePlay}
         onSkip={skip}
         onSeek={seek}
+        onSetSpeed={setSpeed}
       />
     );
   }

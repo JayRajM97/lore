@@ -13,6 +13,7 @@ import { buildLines, activeLineIndex, ScriptLine } from "../lib/lines";
 import { WordTs, Episode } from "../lib/types";
 import { mmss } from "../lib/format";
 import { SPEEDS } from "../lib/theme";
+import Avatar from "./Avatar";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 
@@ -37,12 +38,13 @@ interface Props {
   onTogglePlay: () => void;
   onSkip: (delta: number) => void;
   onSeek: (s: number) => void;
+  onSetSpeed?: (s: number) => void;
 }
 
 export default function LyricsView({
   text, duration, words, episode: ep, onClose,
   playbackPosition, isPlaying, speed,
-  onTogglePlay, onSkip, onSeek,
+  onTogglePlay, onSkip, onSeek, onSetSpeed,
 }: Props) {
   const lines = useMemo(
     () => (duration > 0 ? buildLines(text, duration, words) : []),
@@ -82,7 +84,8 @@ export default function LyricsView({
     <View style={s.wrap}>
       <SafeAreaView edges={["top"]} style={{ backgroundColor: BG }}>
         <View style={s.topBar}>
-          <View>
+          <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={32} />
+          <View style={{ flex: 1 }}>
             <Text style={s.nowLabel}>NOW NARRATING</Text>
             <Text style={s.topTitle} numberOfLines={1}>{ep.subject}</Text>
           </View>
@@ -145,7 +148,12 @@ export default function LyricsView({
 
           {/* transport */}
           <View style={s.transport}>
-            <Pressable style={s.sidePill}>
+            <Pressable style={s.sidePill} onPress={() => {
+              if (onSetSpeed) {
+                const idx = SPEEDS.indexOf(speed as typeof SPEEDS[number]);
+                onSetSpeed(SPEEDS[(idx + 1) % SPEEDS.length]);
+              }
+            }}>
               <Text style={s.sidePillTxt}>{speed}x</Text>
             </Pressable>
 

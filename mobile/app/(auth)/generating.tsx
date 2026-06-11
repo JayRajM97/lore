@@ -32,75 +32,6 @@ interface Item {
 
 const MAX_W = 680;
 
-// Animated shimmer skeleton block
-function Skeleton({ width, height, style }: { width?: any; height: number; style?: any }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(anim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.7] });
-  return (
-    <Animated.View
-      style={[
-        { width: width ?? "100%", height, borderRadius: 8, backgroundColor: C.border, opacity },
-        style,
-      ]}
-    />
-  );
-}
-
-function QueueItem({ item, index }: { item: Item; index: number }) {
-  const { newsletter: nl, stage, error } = item;
-  const isActive = stage === "fetching" || stage === "generating";
-  const isDone = stage === "done";
-  const isFailed = stage === "failed";
-
-  return (
-    <View style={[styles.qItem, isActive && styles.qItemActive]}>
-      <View style={styles.qThumb}>
-        {isActive ? (
-          <View style={styles.qSpinner}>
-            <ActivityIndicator size="small" color={C.teal} />
-          </View>
-        ) : isDone ? (
-          <View style={styles.qDone}>
-            <Text style={styles.qDoneIcon}>✓</Text>
-          </View>
-        ) : isFailed ? (
-          <View style={styles.qFail}>
-            <Text style={styles.qFailIcon}>✕</Text>
-          </View>
-        ) : (
-          <View style={styles.qQueue}>
-            <Text style={styles.qQueueIcon}>⏸</Text>
-          </View>
-        )}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.qLabel} numberOfLines={1}>
-          {isActive
-            ? stage === "fetching"
-              ? "Fetching emails..."
-              : "Converting..."
-            : isDone
-            ? item.episodeCount && item.episodeCount > 1
-              ? `${item.episodeCount} episodes ready`
-              : "Ready"
-            : isFailed
-            ? error ?? "Failed"
-            : "Waiting in queue"}
-        </Text>
-        <Text style={styles.qName} numberOfLines={1}>{nl.sender_name}</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function Generating() {
   const router = useRouter();
   const token = useAuth((s) => s.accessToken);
@@ -112,6 +43,7 @@ export default function Generating() {
   );
   const [done, setDone] = useState(false);
   const ran = useRef(false);
+  const progress = useRef(new Animated.Value(0)).current;
 
   function patch(i: number, update: Partial<Item>) {
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...update } : it)));
@@ -122,9 +54,6 @@ export default function Generating() {
     ran.current = true;
 
     (async () => {
-      // Dedup: load ids of episodes already generated for this user so we never
-      // re-synthesize the same Gmail message. Episode id is deterministic:
-      // `${newsletterId}-${gmailMessageId}`.
       const existingIds = new Set<string>();
       if (user) {
         try {
@@ -134,7 +63,7 @@ export default function Generating() {
             existingIds.add(e.id);
           }
         } catch (e) {
-          console.warn("dedup preload failed (will generate without dedup):", e);
+          console.warn("dedup preload failed:", e);
         }
       }
 
@@ -167,17 +96,15 @@ export default function Generating() {
         let lastGenMs = 0;
         for (const emailData of emailsData) {
           const epId = `${nl.id}-${emailData.id}`;
-          // Already have this exact email as an episode — skip regeneration.
           if (existingIds.has(epId)) {
             skipped++;
             continue;
           }
-
           let tts;
           try {
             tts = await synthesize(emailData.text);
           } catch {
-            continue; // skip one failed email, try the rest
+            continue;
           }
           existingIds.add(epId);
           episodeCount++;
@@ -197,7 +124,6 @@ export default function Generating() {
             word_count: tts.wordCount,
             generation_time_ms: tts.generationTimeMs,
           });
-          // Expose episodes incrementally so Library screen sees them live
           (globalThis as any).__lore_episodes = [
             ...(((globalThis as any).__lore_episodes ?? []) as Episode[]).filter(
               (e: Episode) => e.id !== epId
@@ -213,20 +139,27 @@ export default function Generating() {
         } else {
           patch(i, { stage: "done", wordCount: lastWordCount, genMs: lastGenMs, episodeCount });
         }
+
+        // Animate progress bar
+        Animated.timing(progress, {
+          toValue: (i + 1) / list.length,
+          duration: 400,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: false,
+        }).start();
       }
 
       if (user && episodes.length) {
-        saveEpisodes(user.sub, episodes).catch((e) => {
-          console.error("saveEpisodes failed", e);
-        });
+        saveEpisodes(user.sub, episodes).catch((e) => console.error("saveEpisodes failed", e));
       }
+      (globalThis as any).__lore_just_generated = true;
       setDone(true);
     })();
   }, []);
 
   useEffect(() => {
     if (done) {
-      const t = setTimeout(() => router.replace("/home"), 1200);
+      const t = setTimeout(() => router.replace("/home"), 1400);
       return () => clearTimeout(t);
     }
   }, [done]);
@@ -235,38 +168,33 @@ export default function Generating() {
 
   const doneCount = items.filter((it) => it.stage === "done").length;
   const failCount = items.filter((it) => it.stage === "failed").length;
-  const activeItem = items.find(
-    (it) => it.stage === "fetching" || it.stage === "generating"
-  );
-  const processingCount = items.filter(
-    (it) => it.stage === "queued" || it.stage === "fetching" || it.stage === "generating"
-  ).length;
+  const activeItem = items.find((it) => it.stage === "fetching" || it.stage === "generating");
+  const progressPct = progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
 
   return (
     <SafeAreaView style={styles.wrap} edges={["top", "bottom"]}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-      >
+      {/* ── Header ── */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <View style={styles.logoMark}>
+            <Text style={styles.logoMarkText}>L</Text>
+          </View>
+          <Text style={styles.logoText}>Lore!</Text>
+        </View>
+        <Pressable onPress={() => router.replace("/home")} style={styles.skipBtn}>
+          <Text style={styles.skipText}>Skip →</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <View style={styles.inner}>
-          {/* ── Generating banner ── */}
-          {!done ? (
-            <View style={styles.banner}>
-              <View style={styles.bannerIcon}>
-                <ActivityIndicator color={C.teal} size="small" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bannerTitle}>Generating Audio</Text>
-                <Text style={styles.bannerSub}>
-                  Processing {list.length} newsletter
-                  {list.length !== 1 ? "s" : ""} into premium audio.
-                  They'll appear in your feed when ready.
-                </Text>
-              </View>
-            </View>
-          ) : (
+
+          {/* ── Status banner ── */}
+          {done ? (
             <View style={[styles.banner, styles.bannerDone]}>
-              <Text style={styles.bannerDoneIcon}>✓</Text>
+              <View style={styles.bannerIconWrap}>
+                <Text style={styles.bannerDoneIcon}>✓</Text>
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.bannerTitle}>
                   {doneCount} episode{doneCount !== 1 ? "s" : ""} ready!
@@ -274,97 +202,64 @@ export default function Generating() {
                 <Text style={styles.bannerSub}>Taking you to your feed…</Text>
               </View>
             </View>
-          )}
-
-          {/* Always-visible escape to Library */}
-          <Pressable onPress={() => router.replace("/home")} style={styles.goLibrary}>
-            <Text style={styles.goLibraryText}>Continue to Library →</Text>
-          </Pressable>
-
-          {/* ── Two-column layout ── */}
-          <View style={styles.cols}>
-            {/* Left: skeleton incoming content */}
-            <View style={styles.leftCol}>
-              <Text style={styles.sectionLabel}>Incoming Content</Text>
-              <View style={styles.skeletonCards}>
-                {list.slice(0, 4).map((nl, i) => {
-                  const item = items[i];
-                  const isReady = item?.stage === "done";
-                  return (
-                    <View key={nl.id} style={styles.skeletonCard}>
-                      {isReady ? (
-                        <View style={styles.skeletonReadyBadge}>
-                          <Text style={styles.skeletonReadyText}>READY</Text>
-                        </View>
-                      ) : null}
-                      <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
-                      <View style={{ gap: 6, flex: 1 }}>
-                        {isReady ? (
-                          <>
-                            <Text style={styles.skeletonName} numberOfLines={1}>
-                              {nl.sender_name}
-                            </Text>
-                            <Text style={styles.skeletonReady}>Audio ready</Text>
-                          </>
-                        ) : (
-                          <>
-                            <Skeleton height={10} width="70%" />
-                            <Skeleton height={8} width="45%" />
-                          </>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
+          ) : (
+            <View style={styles.banner}>
+              <View style={styles.bannerIconWrap}>
+                <ActivityIndicator color={C.indigo} size="small" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bannerTitle}>
+                  {activeItem
+                    ? `Converting ${activeItem.newsletter.sender_name}…`
+                    : "Generating audio"}
+                </Text>
+                <Text style={styles.bannerSub}>
+                  {doneCount} of {list.length} done
+                </Text>
               </View>
             </View>
+          )}
 
-            {/* Right: queue */}
-            <View style={styles.rightCol}>
-              <View style={styles.queueHeader}>
-                <Text style={styles.sectionLabel}>Queue</Text>
-                {processingCount > 0 && (
-                  <View style={styles.queueBadge}>
-                    <Text style={styles.queueBadgeText}>
-                      {processingCount} Processing
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.qList}>
-                {items.map((item, i) => (
-                  <QueueItem key={item.newsletter.id} item={item} index={i} />
-                ))}
-              </View>
+          {/* ── Progress bar ── */}
+          <View style={styles.progressWrap}>
+            <View style={styles.progressTrack}>
+              <Animated.View style={[styles.progressFill, { width: progressPct }]} />
+            </View>
+            <Text style={styles.progressLabel}>{doneCount}/{list.length}</Text>
+          </View>
+
+          {/* ── Queue list ── */}
+          <View style={styles.queueSection}>
+            <Text style={styles.sectionLabel}>Queue</Text>
+            <View style={styles.qList}>
+              {items.map((item, i) => (
+                <QueueRow key={item.newsletter.id} item={item} />
+              ))}
             </View>
           </View>
 
-          {/* ── Recently played placeholder ── */}
+          {/* ── Done results ── */}
           {done && doneCount > 0 && (
-            <View>
+            <View style={styles.doneSection}>
               <Text style={styles.sectionLabel}>Just Generated</Text>
-              <View style={styles.recentList}>
+              <View style={styles.doneList}>
                 {items
-                  .filter((it) => it.stage === "done")
+                  .filter((it) => it.stage === "done" && (it.episodeCount ?? 0) > 0)
                   .map((it) => (
-                    <View key={it.newsletter.id} style={styles.recentRow}>
+                    <View key={it.newsletter.id} style={styles.doneRow}>
                       <Avatar
                         name={it.newsletter.sender_name}
                         url={it.newsletter.sender_logo_url}
                         size={44}
                       />
                       <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.recentName} numberOfLines={1}>
+                        <Text style={styles.doneName} numberOfLines={1}>
                           {it.newsletter.sender_name}
                         </Text>
-                        {it.wordCount ? (
-                          <Text style={styles.recentMeta}>
-                            {it.wordCount} words ·{" "}
-                            {it.genMs
-                              ? `${(it.genMs / 1000).toFixed(1)}s to generate`
-                              : ""}
-                          </Text>
-                        ) : null}
+                        <Text style={styles.doneMeta}>
+                          {it.episodeCount} episode{(it.episodeCount ?? 0) !== 1 ? "s" : ""}
+                          {it.genMs ? ` · ${(it.genMs / 1000).toFixed(1)}s` : ""}
+                        </Text>
                       </View>
                       <View style={styles.readyPill}>
                         <Text style={styles.readyPillText}>READY</Text>
@@ -377,6 +272,7 @@ export default function Generating() {
         </View>
       </ScrollView>
 
+      {/* ── Bottom CTA when done ── */}
       {done && (
         <View style={styles.doneBar}>
           <Pressable style={styles.doneBtn} onPress={() => router.replace("/home")}>
@@ -388,106 +284,117 @@ export default function Generating() {
   );
 }
 
+function QueueRow({ item }: { item: Item }) {
+  const { newsletter: nl, stage, error } = item;
+  const isActive = stage === "fetching" || stage === "generating";
+  const isDone = stage === "done";
+  const isFailed = stage === "failed";
+
+  return (
+    <View style={[styles.qRow, isActive && styles.qRowActive, isDone && styles.qRowDone]}>
+      <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={styles.qName} numberOfLines={1}>{nl.sender_name}</Text>
+        <Text style={[
+          styles.qStatus,
+          isActive && styles.qStatusActive,
+          isDone && styles.qStatusDone,
+          isFailed && styles.qStatusFail,
+        ]}>
+          {isActive
+            ? stage === "fetching" ? "Fetching emails…" : "Converting to audio…"
+            : isDone
+            ? item.episodeCount === 0 ? "Already in library" : `${item.episodeCount} episode${(item.episodeCount ?? 0) !== 1 ? "s" : ""} ready`
+            : isFailed
+            ? error ?? "Failed"
+            : "Waiting in queue"}
+        </Text>
+      </View>
+      <View style={[styles.qBadge,
+        isActive && styles.qBadgeActive,
+        isDone && styles.qBadgeDone,
+        isFailed && styles.qBadgeFail,
+      ]}>
+        {isActive
+          ? <ActivityIndicator size="small" color={C.indigo} />
+          : isDone
+          ? <Text style={styles.qBadgeIcon}>✓</Text>
+          : isFailed
+          ? <Text style={styles.qBadgeIcon}>✕</Text>
+          : <Text style={styles.qBadgeNum}>⏸</Text>
+        }
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
   scroll: { paddingBottom: 40 },
-  inner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", padding: 16, gap: 20 },
+  inner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", padding: 16, gap: 24 },
 
-  // banner
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 0.5, borderColor: C.border },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  logoMark: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.indigo, alignItems: "center", justifyContent: "center" },
+  logoMarkText: { color: C.white, fontSize: 14, fontWeight: "800" },
+  logoText: { fontSize: 17, fontWeight: "800", color: C.ink, letterSpacing: -0.3 },
+  skipBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+  skipText: { fontSize: 14, color: C.teal, fontWeight: "600" },
+
   banner: {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: C.surface, borderRadius: 14,
-    padding: 16, borderWidth: 0.5, borderColor: C.border,
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: C.surface, borderRadius: 16,
+    padding: 16, borderWidth: 1, borderColor: C.border,
   },
   bannerDone: { backgroundColor: C.teal50, borderColor: C.teal },
-  bannerIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.teal50, alignItems: "center", justifyContent: "center",
-  },
-  bannerDoneIcon: { fontSize: 20, color: C.teal, width: 36, textAlign: "center" },
+  bannerIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.white, alignItems: "center", justifyContent: "center", borderWidth: 0.5, borderColor: C.border },
+  bannerDoneIcon: { fontSize: 18, color: C.teal },
   bannerTitle: { fontSize: 16, fontWeight: "700", color: C.ink },
-  bannerSub: { fontSize: 13, color: C.muted, marginTop: 2, lineHeight: 18 },
+  bannerSub: { fontSize: 13, color: C.muted, marginTop: 2 },
 
-  goLibrary: { alignSelf: "flex-end" },
-  goLibraryText: { fontSize: 13, color: C.teal, fontWeight: "600" },
+  progressWrap: { gap: 6 },
+  progressTrack: { height: 4, borderRadius: 2, backgroundColor: C.border, overflow: "hidden" },
+  progressFill: { height: 4, borderRadius: 2, backgroundColor: C.indigo },
+  progressLabel: { fontSize: 12, color: C.muted, textAlign: "right" },
 
-  // two columns
-  cols: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
-  leftCol: { flex: 1.2, gap: 10 },
-  rightCol: { flex: 1, gap: 8 },
-  sectionLabel: { fontSize: 16, fontWeight: "700", color: C.ink },
+  sectionLabel: { fontSize: 17, fontWeight: "700", color: C.ink, marginBottom: 8 },
+  queueSection: {},
+  qList: { gap: 8 },
 
-  // skeleton cards
-  skeletonCards: { gap: 10 },
-  skeletonCard: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: C.white, borderRadius: 12,
-    borderWidth: 0.5, borderColor: C.border, padding: 12,
-    position: "relative",
+  qRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: C.white, borderRadius: 14,
+    borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 14, paddingVertical: 12,
   },
-  skeletonReadyBadge: {
-    position: "absolute", top: 8, right: 8,
-    backgroundColor: C.teal50, borderRadius: 4,
-    paddingHorizontal: 6, paddingVertical: 2,
-  },
-  skeletonReadyText: { fontSize: 9, fontWeight: "700", color: C.teal, letterSpacing: 0.5 },
-  skeletonName: { fontSize: 13, fontWeight: "600", color: C.ink },
-  skeletonReady: { fontSize: 12, color: C.teal },
+  qRowActive: { borderColor: C.indigo, backgroundColor: "#F5F4FF" },
+  qRowDone: { borderColor: C.teal, backgroundColor: C.teal50 },
+  qName: { fontSize: 15, fontWeight: "600", color: C.ink },
+  qStatus: { fontSize: 12, color: C.muted },
+  qStatusActive: { color: C.indigo },
+  qStatusDone: { color: C.teal },
+  qStatusFail: { color: C.coral },
 
-  // queue
-  queueHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  queueBadge: {
-    backgroundColor: C.teal, borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3,
-  },
-  queueBadgeText: { fontSize: 11, fontWeight: "700", color: C.white },
-  qList: { gap: 6 },
-  qItem: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.white, borderRadius: 10,
-    borderWidth: 0.5, borderColor: C.border, padding: 10,
-  },
-  qItemActive: { borderColor: C.teal, backgroundColor: C.teal50 },
-  qThumb: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  qSpinner: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  qDone: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.teal, alignItems: "center", justifyContent: "center",
-  },
-  qDoneIcon: { color: C.white, fontWeight: "700", fontSize: 14 },
-  qFail: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.coral50, alignItems: "center", justifyContent: "center",
-  },
-  qFailIcon: { color: C.coral, fontWeight: "700", fontSize: 14 },
-  qQueue: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.surface, alignItems: "center", justifyContent: "center",
-  },
-  qQueueIcon: { color: C.muted, fontSize: 14 },
-  qLabel: { fontSize: 11, color: C.muted },
-  qName: { fontSize: 13, fontWeight: "500", color: C.ink },
+  qBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 0.5, borderColor: C.border },
+  qBadgeActive: { borderColor: C.indigo },
+  qBadgeDone: { backgroundColor: C.teal, borderColor: C.teal },
+  qBadgeFail: { backgroundColor: C.coral50, borderColor: C.coral },
+  qBadgeIcon: { fontSize: 14, fontWeight: "700", color: C.white },
+  qBadgeNum: { fontSize: 14, color: C.muted },
 
-  // recently generated
-  recentList: { marginTop: 8, gap: 8 },
-  recentRow: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: C.white, borderRadius: 12,
+  doneSection: {},
+  doneList: { gap: 8 },
+  doneRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: C.white, borderRadius: 14,
     borderWidth: 0.5, borderColor: C.border, padding: 12,
   },
-  recentName: { fontSize: 14, fontWeight: "500", color: C.ink },
-  recentMeta: { fontSize: 12, color: C.muted },
-  readyPill: {
-    backgroundColor: C.teal50, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
-  },
+  doneName: { fontSize: 14, fontWeight: "600", color: C.ink },
+  doneMeta: { fontSize: 12, color: C.muted },
+  readyPill: { backgroundColor: C.teal50, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   readyPillText: { fontSize: 10, fontWeight: "700", color: C.teal, letterSpacing: 0.5 },
 
-  // done bar
-  doneBar: {
-    padding: 16, paddingBottom: 28, borderTopWidth: 0.5, borderColor: C.border,
-    backgroundColor: C.bg,
-  },
-  doneBtn: {
-    backgroundColor: C.teal, borderRadius: 14, paddingVertical: 16, alignItems: "center",
-  },
+  doneBar: { padding: 16, paddingBottom: 28, borderTopWidth: 0.5, borderColor: C.border, backgroundColor: C.bg },
+  doneBtn: { backgroundColor: C.teal, borderRadius: 14, paddingVertical: 16, alignItems: "center", shadowColor: C.teal, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   doneBtnText: { color: C.white, fontWeight: "700", fontSize: 16 },
 });
