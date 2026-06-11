@@ -10,7 +10,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
 import { Episode, Newsletter } from "../../lib/types";
-import { greeting, humanDuration, mmss, relativeDate } from "../../lib/format";
+import { humanDuration } from "../../lib/format";
 import { getEpisodes, getFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
@@ -60,7 +60,11 @@ export default function Home() {
   if (loaded && !gmailConnected) {
     return (
       <SafeAreaView style={styles.wrap} edges={["top"]}>
-        <EmptyDashboard onConnect={() => router.push("/(auth)/gmail")} />
+        <EmptyDashboard
+          user={user}
+          onConnect={() => router.push("/(auth)/gmail")}
+          onSettings={() => router.push("/profile")}
+        />
       </SafeAreaView>
     );
   }
@@ -70,15 +74,7 @@ export default function Home() {
       <SafeAreaView style={styles.wrap} edges={["top"]}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
           <View style={styles.inner}>
-            <View style={styles.header}>
-              <View>
-                <Text style={styles.greeting}>{greeting()}</Text>
-                {user && <Text style={styles.userName}>{user.name}</Text>}
-              </View>
-              <Pressable style={styles.addBtn} onPress={() => router.push("/(auth)/scan")}>
-                <Text style={styles.addBtnText}>+ Add</Text>
-              </Pressable>
-            </View>
+            <HomeHeader user={user} onSettings={() => router.push("/profile")} />
             {!accessToken && (
               <Pressable style={styles.tokenBanner} onPress={() => router.push("/(auth)/gmail")}>
                 <Text style={styles.tokenText}>Reconnect Gmail to generate new episodes →</Text>
@@ -118,16 +114,7 @@ export default function Home() {
     <SafeAreaView style={styles.wrap} edges={["top"]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <View style={styles.inner}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.greeting}>{greeting()}</Text>
-              {user && <Text style={styles.userName}>{user.name}</Text>}
-            </View>
-            <Pressable style={styles.addBtn} onPress={() => router.push("/(auth)/scan")}>
-              <Text style={styles.addBtnText}>+ Add</Text>
-            </Pressable>
-          </View>
+          <HomeHeader user={user} onSettings={() => router.push("/profile")} />
 
           {!accessToken && (
             <Pressable style={styles.tokenBanner} onPress={() => router.push("/(auth)/gmail")}>
@@ -250,10 +237,23 @@ export default function Home() {
   );
 }
 
-function EmptyDashboard({ onConnect }: { onConnect: () => void }) {
+function HomeHeader({ user, onSettings }: { user: any; onSettings: () => void }) {
+  return (
+    <View style={styles.header}>
+      <Avatar name={user?.name ?? "?"} url={user?.picture} size={36} />
+      <Text style={styles.headerLogo}>Lore!</Text>
+      <Pressable style={styles.settingsBtn} onPress={onSettings}>
+        <Text style={styles.settingsIcon}>⚙</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function EmptyDashboard({ user, onConnect, onSettings }: { user: any; onConnect: () => void; onSettings: () => void }) {
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
       <View style={styles.inner}>
+        <HomeHeader user={user} onSettings={onSettings} />
         <View style={styles.emptyHero}>
           <View style={styles.emptyHeroIcon}><Text style={{ fontSize: 36 }}>📖</Text></View>
           <Text style={styles.emptyHeroTitle}>Your library is{"\n"}whispering...</Text>
@@ -296,11 +296,10 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 40 },
   inner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", padding: 16, gap: 24 },
 
-  header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  greeting: { fontSize: 22, fontWeight: "700", color: C.ink, letterSpacing: -0.3 },
-  userName: { fontSize: 14, color: C.muted, marginTop: 2 },
-  addBtn: { backgroundColor: C.teal, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 8 },
-  addBtnText: { color: C.white, fontWeight: "600", fontSize: 14 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerLogo: { fontSize: 20, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
+  settingsBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 0.5, borderColor: C.border },
+  settingsIcon: { fontSize: 16, color: C.muted },
 
   tokenBanner: { backgroundColor: C.amber50, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: C.amber },
   tokenText: { fontSize: 13, color: C.amber, textAlign: "center" },

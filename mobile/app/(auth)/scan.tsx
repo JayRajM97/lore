@@ -6,39 +6,49 @@ import { C } from "../../lib/theme";
 import { scanInbox } from "../../lib/gmail";
 import { useAuth } from "../../store/authStore";
 
-const SUBS = [
-  "Checking the last 90 days",
+const STEPS = [
+  "Checking the last 30 days",
   "Finding newsletters",
-  "Filtering noise…",
+  "Filtering noise",
   "Almost there",
 ];
 
 export default function Scan() {
   const router = useRouter();
   const accessToken = useAuth((s) => s.accessToken);
-  const [sub, setSub] = useState(0);
+  const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const pulse = useRef(new Animated.Value(0)).current;
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Token expired → must re-auth before scanning
     if (!accessToken) {
       router.replace("/(auth)/gmail");
       return;
     }
 
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ])
-    ).start();
-    const cycle = setInterval(() => setSub((s) => (s + 1) % SUBS.length), 2500);
+    // Animate dots
+    const anim = (dot: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, { toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(dot, { toValue: 0, duration: 400, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.delay(800 - delay),
+        ])
+      ).start();
+
+    anim(dot1, 0);
+    anim(dot2, 200);
+    anim(dot3, 400);
+
+    const cycle = setInterval(() => setStep((s) => (s + 1) % STEPS.length), 2200);
 
     scanInbox(accessToken)
       .then((res) => {
         (globalThis as any).__lore_scan = res;
-        (globalThis as any).__lore_generating = null; // clear stale state
+        (globalThis as any).__lore_generating = null;
         router.replace("/(auth)/discover");
       })
       .catch((e) => {
@@ -49,36 +59,60 @@ export default function Scan() {
     return () => clearInterval(cycle);
   }, [accessToken]);
 
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
-  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.05] });
-
   return (
-    <SafeAreaView style={styles.wrap} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.wrap}>
       <View style={styles.center}>
-        <Animated.View style={[styles.ring, { transform: [{ scale }], opacity }]} />
-        <View style={styles.core}>
-          <Text style={styles.coreIcon}>✉</Text>
+        {/* Icon */}
+        <View style={styles.iconWrap}>
+          <Text style={styles.icon}>✉</Text>
         </View>
+
+        {error ? (
+          <>
+            <Text style={styles.title}>Something went wrong</Text>
+            <Text style={styles.sub}>{error}</Text>
+            <Pressable style={styles.retry} onPress={() => router.replace("/(auth)/gmail")}>
+              <Text style={styles.retryText}>Reconnect Gmail</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>Scanning your inbox</Text>
+            <View style={styles.dotsRow}>
+              {[dot1, dot2, dot3].map((d, i) => (
+                <Animated.View
+                  key={i}
+                  style={[styles.dot, { opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }]}
+                />
+              ))}
+            </View>
+            <Text style={styles.sub}>{STEPS[step]}</Text>
+          </>
+        )}
       </View>
-      <Text style={styles.title}>{error ? "Something went wrong" : "Scanning your inbox…"}</Text>
-      <Text style={styles.sub}>{error ?? SUBS[sub]}</Text>
-      {error && (
-        <Pressable style={styles.retry} onPress={() => router.replace("/(auth)/gmail")}>
-          <Text style={styles.retryText}>Reconnect Gmail</Text>
-        </Pressable>
-      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: C.bg, gap: 20 },
-  center: { width: 130, height: 130, alignItems: "center", justifyContent: "center" },
-  ring: { position: "absolute", width: 130, height: 130, borderRadius: 65, backgroundColor: C.teal },
-  core: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.teal, alignItems: "center", justifyContent: "center" },
-  coreIcon: { fontSize: 26, color: C.white },
-  title: { fontSize: 20, fontWeight: "700", color: C.ink, marginTop: 8 },
-  sub: { fontSize: 15, color: C.muted, textAlign: "center", paddingHorizontal: 40 },
-  retry: { marginTop: 4, backgroundColor: C.teal, borderRadius: 100, paddingHorizontal: 24, paddingVertical: 12 },
+  wrap: { flex: 1, backgroundColor: C.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, gap: 16 },
+
+  iconWrap: {
+    width: 72, height: 72, borderRadius: 20,
+    backgroundColor: C.indigo,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: 8,
+    shadowColor: C.indigo, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+  },
+  icon: { fontSize: 30, color: C.white },
+
+  title: { fontSize: 22, fontWeight: "700", color: C.ink, letterSpacing: -0.3 },
+  sub: { fontSize: 15, color: C.muted, textAlign: "center" },
+
+  dotsRow: { flexDirection: "row", gap: 6, alignItems: "center" },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.indigo },
+
+  retry: { marginTop: 8, backgroundColor: C.coral, borderRadius: 100, paddingHorizontal: 24, paddingVertical: 12 },
   retryText: { color: C.white, fontWeight: "600" },
 });
