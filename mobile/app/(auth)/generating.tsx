@@ -13,9 +13,9 @@ import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
 import { Newsletter, Episode } from "../../lib/types";
-import { fetchRecentEmails } from "../../lib/gmail";
+import { fetchRecentEmails, FetchedEmail } from "../../lib/gmail";
 import { synthesize } from "../../lib/tts";
-import { saveEpisodes } from "../../lib/db";
+import { saveEpisodes, getEpisodes } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import Avatar from "../../components/Avatar";
 
@@ -122,6 +122,22 @@ export default function Generating() {
     ran.current = true;
 
     (async () => {
+      // Dedup: load ids of episodes already generated for this user so we never
+      // re-synthesize the same Gmail message. Episode id is deterministic:
+      // `${newsletterId}-${gmailMessageId}`.
+      const existingIds = new Set<string>();
+      if (user) {
+        try {
+          const prior = await getEpisodes(user.sub);
+          for (const e of prior) existingIds.add(e.id);
+          for (const e of ((globalThis as any).__lore_episodes ?? []) as Episode[]) {
+            existingIds.add(e.id);
+          }
+        } catch (e) {
+          console.warn("dedup preload failed (will generate without dedup):", e);
+        }
+      }
+
       const episodes: Episode[] = [];
       for (let i = 0; i < list.length; i++) {
         const nl = list[i];
@@ -132,7 +148,7 @@ export default function Generating() {
         }
 
         patch(i, { stage: "fetching" });
-        let emailsData: Array<{ subject: string; text: string }> = [];
+        let emailsData: FetchedEmail[] = [];
         try {
           emailsData = await fetchRecentEmails(nl, token, 2);
         } catch (e: any) {
@@ -146,19 +162,27 @@ export default function Generating() {
 
         patch(i, { stage: "generating" });
         let episodeCount = 0;
+        let skipped = 0;
         let lastWordCount = 0;
         let lastGenMs = 0;
         for (const emailData of emailsData) {
+          const epId = `${nl.id}-${emailData.id}`;
+          // Already have this exact email as an episode — skip regeneration.
+          if (existingIds.has(epId)) {
+            skipped++;
+            continue;
+          }
+
           let tts;
           try {
             tts = await synthesize(emailData.text);
           } catch {
             continue; // skip one failed email, try the rest
           }
+          existingIds.add(epId);
           episodeCount++;
           lastWordCount = tts.wordCount;
           lastGenMs = tts.generationTimeMs;
-          const epId = `${nl.id}-${Date.now()}-${episodeCount}`;
           episodes.push({
             id: epId,
             newsletter_id: nl.id,
@@ -174,17 +198,23 @@ export default function Generating() {
             generation_time_ms: tts.generationTimeMs,
           });
           // Expose episodes incrementally so Library screen sees them live
-          (globalThis as any).__lore_episodes = [...episodes];
+          (globalThis as any).__lore_episodes = [
+            ...(((globalThis as any).__lore_episodes ?? []) as Episode[]).filter(
+              (e: Episode) => e.id !== epId
+            ),
+            ...episodes,
+          ];
         }
 
-        if (episodeCount === 0) {
+        if (episodeCount === 0 && skipped > 0) {
+          patch(i, { stage: "done", episodeCount: 0, error: "Already in library" });
+        } else if (episodeCount === 0) {
           patch(i, { stage: "failed", error: "TTS failed" });
         } else {
           patch(i, { stage: "done", wordCount: lastWordCount, genMs: lastGenMs, episodeCount });
         }
       }
 
-      (globalThis as any).__lore_episodes = episodes;
       if (user && episodes.length) {
         saveEpisodes(user.sub, episodes).catch((e) => {
           console.error("saveEpisodes failed", e);

@@ -161,12 +161,18 @@ export async function fetchLatestEmail(
   return { subject, text: trimmed };
 }
 
+export interface FetchedEmail {
+  id: string; // stable Gmail message id — used to dedup episodes
+  subject: string;
+  text: string;
+}
+
 /** Fetch up to `max` recent emails (last 90 days) from a newsletter sender. */
 export async function fetchRecentEmails(
   newsletter: Newsletter,
   token: string,
   max = 10
-): Promise<Array<{ subject: string; text: string }>> {
+): Promise<FetchedEmail[]> {
   const search = await getJson(
     `${GMAIL}/messages?q=${encodeURIComponent(
       `from:${newsletter.sender_email} newer_than:90d`
@@ -190,14 +196,14 @@ export async function fetchRecentEmails(
         const text = fromHtml.length > plain.length ? fromHtml : plain;
         if (!text || text.trim().length < 50) return null;
         const trimmed = text.split(/\s+/).filter(Boolean).slice(0, 2500).join(" ");
-        return { subject, text: trimmed };
+        return { id, subject, text: trimmed };
       } catch {
         return null;
       }
     })
   );
 
-  return results.filter((r): r is { subject: string; text: string } => r !== null);
+  return results.filter((r): r is FetchedEmail => r !== null);
 }
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -262,7 +268,7 @@ const POS_SUBJECT =
 
 // Transactional / notification / promo veto — matched against subject + snippet.
 const NEG_CONTENT =
-  /\b(otp|one[- ]time (password|pin)|verify|verification|sign[- ]?in|log[- ]?in|security alert|statement|invoice|receipt|payment|transaction|balance|emi|credit card|debit|refund|kyc|due date|bill|delivery|shipped|track.*order|cashback|reward point|coins|streak|% off|\bsale\b|\bdeal\b|limited[- ]time|flash sale|buy now|shop now|job alert|jobs for you|new job|hiring|application (received|submitted)|booking confirm|itinerary|check[- ]in|appointment|you have earned|your.*expires|your.*due|your subscription|renew now)\b/i;
+  /\b(otp|one[- ]time (password|pin)|verify|verification|sign[- ]?in|log[- ]?in|security alert|statement|invoice|receipt|payment|transaction|balance|emi|credit card|debit|refund|kyc|due date|bill|delivery|shipped|track.*order|cashback|reward point|coins|streak|% off|\bsale\b|\bdeal\b|limited[- ]time|flash sale|buy now|shop now|job alert|jobs for you|new job|hiring|application (received|submitted)|booking confirm|itinerary|check[- ]in|appointment|you have earned|your.*expires|your.*due|your subscription|renew now|your (daily|lesson|practice)|don'?t lose your|complete your|continue learning|keep your streak|time to practice|lesson|quiz|reminder|you'?re on a roll|missed you|come back|notification settings)\b/i;
 
 // Transactional sender local-part veto.
 const NEG_SENDER =
@@ -353,24 +359,28 @@ function parseMessage(msg: any): MsgMeta | null {
   // 2. Curated editorial newsletters — always keep, skip remaining vetoes.
   if (domainMatches(domain, EDITORIAL_ALLOW)) return keep(100);
 
-  // 3. (hasUnsub check removed — messages come from has:unsubscribe query
-  //     which is the server-side source of truth; checking the header again
-  //     via metadata format is unreliable due to API casing behaviour.)
+  // 3. Must have an unsubscribe header — baseline for any bulk/editorial mail.
+  //    (header keys are lowercased above, so this is now reliable.)
+  if (!hasUnsub) return null;
 
   // 4. Transactional sender local-part veto (no-reply@, alerts@, etc.).
   if (NEG_SENDER.test(localPart)) return null;
 
-  // 5. Score positive editorial signals — not a gate, just boosts confidence.
-  const isEsp = domainMatches(domain, ESP_DOMAINS);
-  const subjectEditorial = POS_SUBJECT.test(subject);
-  const nameSaysNewsletter = /\bnewsletter\b/i.test(name);
-
-  // 6. Negative content veto — subject + snippet scanned for transactional signals.
+  // 5. Negative content veto — subject + snippet scanned for transactional /
+  //    app-notification / promo signals (payments, lessons, streaks, sales…).
   const content = `${subject} ${snippet}`;
   if (NEG_CONTENT.test(content)) return null;
 
-  // Any email reaching here has List-Unsubscribe + cleared all denylist/veto checks.
-  // That's sufficient evidence of a real newsletter — positive signals just boost score.
+  // 6. Positive editorial signal REQUIRED — this is what separates real
+  //    newsletters from generic bulk mail. Need one of:
+  //      - sent via a known newsletter ESP (Substack, beehiiv, ghost…)
+  //      - subject looks editorial (Issue #, Weekly, Digest, 3-2-1…)
+  //      - sender name literally contains "newsletter"
+  const isEsp = domainMatches(domain, ESP_DOMAINS);
+  const subjectEditorial = POS_SUBJECT.test(subject);
+  const nameSaysNewsletter = /\bnewsletter\b/i.test(name);
+  if (!isEsp && !subjectEditorial && !nameSaysNewsletter) return null;
+
   let score = 1;
   if (isEsp) score += 4;
   if (subjectEditorial) score += 2;
