@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Generated episode audio. URLs are permanent CDN links shared across all
+    // followers (Shared Audio Nodes), so reads are public. Writes come from the
+    // sidecar Admin SDK (bypasses rules); deny client writes to be safe.
+    match /audio/{audioFile} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /episodes/{episodeFile} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

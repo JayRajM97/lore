@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Public catalog — any signed-in user can read. Writes happen ONLY via the
+    // sidecar's Firebase Admin SDK (which bypasses these rules), so clients are
+    // denied: this prevents anyone spoofing follower/play counts or episodes.
+    match /global_newsletters/{newsletterId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /global_episodes/{episodeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // A user owns everything under their own document (feed pointers, saves,
+    // following, legacy follows/episodes).
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,6 +29,7 @@ export default function Home() {
   const [follows, setFollows] = useState<Newsletter[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showReadyBanner, setShowReadyBanner] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -56,6 +58,20 @@ export default function Home() {
     router.push("/player");
   }
 
+  async function syncLatest() {
+    if (syncing) return;
+    if (!accessToken) { router.push("/(auth)/gmail"); return; }
+    setSyncing(true);
+    try {
+      const fol = user ? await getFollows(user.sub).catch(() => [] as Newsletter[]) : [];
+      if (!fol.length) { router.push("/(auth)/scan"); return; }
+      (globalThis as any).__lore_generating = fol;
+      router.push("/(auth)/generating");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const featured = episodes[0] ?? null;
   const upNext = episodes.slice(1, 4);
   const latest = episodes.slice(1);
@@ -80,7 +96,7 @@ export default function Home() {
       <SafeAreaView style={styles.wrap} edges={["top"]}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
           <View style={styles.inner}>
-            <HomeHeader user={user} onSettings={() => router.push("/profile")} />
+            <HomeHeader user={user} onSettings={() => router.push("/profile")} onSync={syncLatest} syncing={syncing} />
             {!accessToken && (
               <Pressable style={styles.tokenBanner} onPress={() => router.push("/(auth)/gmail")}>
                 <Text style={styles.tokenText}>Reconnect Gmail to generate new episodes →</Text>
@@ -120,7 +136,7 @@ export default function Home() {
     <SafeAreaView style={styles.wrap} edges={["top"]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <View style={styles.inner}>
-          <HomeHeader user={user} onSettings={() => router.push("/profile")} />
+          <HomeHeader user={user} onSettings={() => router.push("/profile")} onSync={syncLatest} syncing={syncing} />
 
           {showReadyBanner && (
             <View style={styles.readyBanner}>
@@ -250,14 +266,31 @@ export default function Home() {
   );
 }
 
-function HomeHeader({ user, onSettings }: { user: any; onSettings: () => void }) {
+function HomeHeader({
+  user,
+  onSettings,
+  onSync,
+  syncing,
+}: {
+  user: any;
+  onSettings: () => void;
+  onSync: () => void;
+  syncing: boolean;
+}) {
   return (
     <View style={styles.header}>
       <Avatar name={user?.name ?? "?"} url={user?.picture} size={36} />
       <Text style={styles.headerLogo}>Lore!</Text>
-      <Pressable style={styles.settingsBtn} onPress={onSettings}>
-        <Text style={styles.settingsIcon}>⚙</Text>
-      </Pressable>
+      <View style={styles.headerRight}>
+        <Pressable style={styles.syncBtn} onPress={onSync} disabled={syncing}>
+          {syncing
+            ? <ActivityIndicator size="small" color={C.teal} />
+            : <Text style={styles.syncBtnText}>↻</Text>}
+        </Pressable>
+        <Pressable style={styles.settingsBtn} onPress={onSettings}>
+          <Text style={styles.settingsIcon}>⚙</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -266,7 +299,7 @@ function EmptyDashboard({ user, onConnect, onSettings }: { user: any; onConnect:
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
       <View style={styles.inner}>
-        <HomeHeader user={user} onSettings={onSettings} />
+        <HomeHeader user={user} onSettings={onSettings} onSync={() => onConnect()} syncing={false} />
         <View style={styles.emptyHero}>
           <View style={styles.emptyHeroIcon}><Text style={{ fontSize: 36 }}>📖</Text></View>
           <Text style={styles.emptyHeroTitle}>Your library is{"\n"}whispering...</Text>
@@ -311,6 +344,9 @@ const styles = StyleSheet.create({
 
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerLogo: { fontSize: 20, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  syncBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.teal50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.teal },
+  syncBtnText: { fontSize: 17, color: C.teal, fontWeight: "700" },
   settingsBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 0.5, borderColor: C.border },
   settingsIcon: { fontSize: 16, color: C.muted },
 

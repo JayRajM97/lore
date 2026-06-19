@@ -12,7 +12,7 @@ import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePlayer } from "../store/playerStore";
 import { SPEEDS } from "../lib/theme";
-import { mmss } from "../lib/format";
+import { mmss, episodeDate } from "../lib/format";
 import { extractChapters, Chapter } from "../lib/lines";
 import Avatar from "../components/Avatar";
 import LyricsView from "../components/LyricsView";
@@ -138,6 +138,9 @@ export default function Player() {
       <View style={s.info}>
         <Text style={s.senderLabel}>{ep.sender_name.toUpperCase()}</Text>
         <Text style={s.title} numberOfLines={2}>{ep.subject}</Text>
+        {ep.received_at ? (
+          <Text style={s.dateLabel}>{episodeDate(ep.received_at)}</Text>
+        ) : null}
         {chapters.length > 0 && activeChapter >= 0 && (
           <Text style={s.chapterLabel}>{chapters[activeChapter].title}</Text>
         )}
@@ -254,6 +257,7 @@ const s = StyleSheet.create({
   info: { alignItems: "center", paddingHorizontal: 32, gap: 6 },
   senderLabel: { fontSize: 12, fontWeight: "700", color: GREEN, letterSpacing: 1.5 },
   title: { fontSize: 20, fontWeight: "700", color: TXT, textAlign: "center", lineHeight: 28 },
+  dateLabel: { fontSize: 12, color: MUTED, textAlign: "center", marginTop: 2, letterSpacing: 0.3 },
   chapterLabel: { fontSize: 14, color: MUTED, textAlign: "center" },
 
   scrubWrap: { paddingHorizontal: 24, marginTop: 22, gap: 8 },

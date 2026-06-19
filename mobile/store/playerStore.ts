@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { Episode } from "../lib/types";
 import { AudioService } from "../services/AudioService";
 import { api } from "../lib/api";
+import { trackPlay } from "../lib/discovery";
 
 interface PlayerState {
   currentEpisode: Episode | null;
@@ -57,6 +58,9 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
   play: async (episode) => {
     const same = get().currentEpisode?.id === episode.id;
+    // Global play_count: count a genuine new play, not a resume of the same ep.
+    // episode.id == episode_hash for shared-audio episodes; no-ops otherwise.
+    if (!same) trackPlay(episode.id);
     set({
       currentEpisode: episode,
       duration: episode.audio_duration_s,

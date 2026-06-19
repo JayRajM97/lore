@@ -26,6 +26,18 @@ export function greeting(): string {
   return "Good evening";
 }
 
+/** "Today", "Yesterday", "Monday", "Tue, Jun 10" — for episode cards/player */
+export function episodeDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

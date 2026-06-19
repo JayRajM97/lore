@@ -29,9 +29,8 @@ export default function GmailConnect() {
         setBusy(false);
         return;
       }
-      signIntoFirebase(idToken, token);
-      fetchGoogleUser(token)
-        .then((user) => {
+      Promise.all([signIntoFirebase(idToken, token), fetchGoogleUser(token)])
+        .then(([, user]) => {
           setSession(user, token);
           router.replace("/(auth)/scan");
         })

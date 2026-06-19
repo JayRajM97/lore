@@ -162,12 +162,17 @@ export async function fetchLatestEmail(
 }
 
 export interface FetchedEmail {
-  id: string; // stable Gmail message id — used to dedup episodes
+  id: string;     // stable Gmail message id — used to dedup episodes
   subject: string;
   text: string;
+  date: string;   // ISO string of when the email arrived
 }
 
-/** Fetch up to `max` recent emails (last 90 days) from a newsletter sender. */
+/**
+ * Fetch up to `max` most recent emails from a newsletter sender.
+ * No date window — Gmail returns newest-first by default so this always
+ * gets the latest email even if it arrived 5 minutes ago.
+ */
 export async function fetchRecentEmails(
   newsletter: Newsletter,
   token: string,
@@ -175,7 +180,7 @@ export async function fetchRecentEmails(
 ): Promise<FetchedEmail[]> {
   const search = await getJson(
     `${GMAIL}/messages?q=${encodeURIComponent(
-      `from:${newsletter.sender_email} newer_than:90d`
+      `from:${newsletter.sender_email}`
     )}&maxResults=${max}`,
     token
   );
@@ -189,6 +194,10 @@ export async function fetchRecentEmails(
         const hdrs: Record<string, string> = {};
         for (const h of msg?.payload?.headers ?? []) hdrs[h.name] = h.value;
         const subject = hdrs["Subject"] ?? newsletter.sender_name;
+        const rawDate = hdrs["Date"] ?? null;
+        const date = rawDate
+          ? (() => { try { return new Date(rawDate).toISOString(); } catch { return new Date().toISOString(); } })()
+          : new Date().toISOString();
         const plainRaw = findPart(msg.payload, "text/plain");
         const htmlRaw = findPart(msg.payload, "text/html");
         const plain = plainRaw ? cutFooter(cleanProse(plainRaw)) : "";
@@ -196,7 +205,7 @@ export async function fetchRecentEmails(
         const text = fromHtml.length > plain.length ? fromHtml : plain;
         if (!text || text.trim().length < 50) return null;
         const trimmed = text.split(/\s+/).filter(Boolean).slice(0, 2500).join(" ");
-        return { id, subject, text: trimmed };
+        return { id, subject, text: trimmed, date };
       } catch {
         return null;
       }

@@ -6,8 +6,8 @@ import { C } from "../../lib/theme";
 
 const TABS = [
   { name: "home", label: "Home", icon: "⌂" },
+  { name: "discover", label: "Discover", icon: "◈" },
   { name: "library", label: "Library", icon: "≣" },
-  { name: "search", label: "Search", icon: "⌕" },
   { name: "profile", label: "Profile", icon: "◎" },
 ] as const;
 
@@ -47,6 +47,8 @@ export default function TabsLayout() {
       screenOptions={{ headerShown: false }}
     >
       <Tabs.Screen name="home" />
+      <Tabs.Screen name="home2" />
+      <Tabs.Screen name="discover" />
       <Tabs.Screen name="library" />
       <Tabs.Screen name="search" />
       <Tabs.Screen name="profile" />
