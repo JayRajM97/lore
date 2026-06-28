@@ -24,6 +24,6 @@ export const GOOGLE_SCOPES = [
 // so it must hit the Mac's LAN IP. Update LAN_IP to `ipconfig getifaddr en0`.
 import { Platform } from "react-native";
 
-const LAN_IP = "192.168.0.12"; // Mac's current LAN IP (changes between networks)
+const LAN_IP = "192.168.0.4"; // Mac's current LAN IP (changes between networks)
 export const BACKEND_URL =
   Platform.OS === "web" ? "http://localhost:8000" : `http://${LAN_IP}:8000`;
