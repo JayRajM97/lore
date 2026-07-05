@@ -23,5 +23,13 @@
     "postcss": "8.4.39",
     "tailwindcss": "3.4.7",
     "typescript": "5.5.4"
-  }
+  },
+  "description": "**Turn your newsletters into a podcast — automatically.**",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }

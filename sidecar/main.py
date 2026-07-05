@@ -1,26 +1,30 @@
 """
-Lore — Kokoro TTS sidecar.
+Lore — TTS sidecar.
 
-Loads Kokoro-82M once on startup, synthesizes speech (fast on Apple Silicon —
-near realtime), encodes to MP3 via ffmpeg, and serves the result with HTTP
-range support.
+Supports two TTS backends selected by environment variable:
+  - ElevenLabs API (set ELEVENLABS_API_KEY) — cloud, no GPU required.
+    Recommended for production: one audio file per newsletter per day,
+    stored in Firebase Storage and reused by every listener.
+  - Kokoro-82M local model (default fallback) — near-realtime on Apple
+    Silicon MPS, no API cost, good for local dev/testing.
 
-Single source of truth for both the Next.js web client (via same-origin proxy)
-and the Expo React Native client (direct over LAN).
-
-Kokoro is the fast local model. For full-quality / production, swap to Maya1 on
-a cloud GPU behind the same REST contract — clients don't change.
+The REST contract (/synthesize, /episode, /audio/{id}) is identical for
+both backends — clients don't change.
 
 Run:  uvicorn main:app --host 0.0.0.0 --port 8000
 """
 
+import base64
 import io
+import json
 import os
 import re
 import time
 import uuid
 import subprocess
 import urllib.parse
+import urllib.request
+import urllib.error
 from typing import Dict, Optional
 
 import numpy as np
@@ -55,8 +59,27 @@ SERVICE_ACCOUNT_PATH = os.environ.get(
 )
 STORAGE_BUCKET = "lore-10132.firebasestorage.app"
 
-# Kokoro uses named voices, not free-form descriptions. Default to a warm
-# American male (matches the playground's default "male, 30s, warm").
+# ── ElevenLabs config ────────────────────────────────────────────────────────
+# Set ELEVENLABS_API_KEY to use the cloud API instead of local Kokoro.
+# The key needs only the text-to-speech permission.
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+EL_MODEL = "eleven_turbo_v2_5"   # fast + cheap; swap to eleven_multilingual_v2 for higher quality
+EL_API_BASE = "https://api.elevenlabs.io/v1"
+
+# Kokoro voice ID → ElevenLabs voice ID mapping.
+# EL voices chosen to match the Kokoro voice's character as closely as possible.
+EL_VOICE_MAP: Dict[str, str] = {
+    "af_heart":   "21m00Tcm4TlvDq8ikWAM",  # Rachel — warm American female
+    "af_bella":   "EXAVITQu4vr4xnSDxMaL",  # Bella  — warm American female
+    "af_sky":     "MF3mGyEYCl7XYWbV9V6O",  # Elli   — bright/young female
+    "af_nicole":  "piTKgcLEGmPE4e6mEKli",  # Nicole — soft, breathy female
+    "am_michael": "pNInz6obpgDQGcFmaJgB",  # Adam   — deep American male
+    "am_onyx":    "VR6AewLTigWG4xSOukaG",  # Arnold — authoritative male
+    "am_puck":    "TX3LPaxmHKxFdv7VOQHJ",  # Liam   — bright, light male
+}
+EL_DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel
+
+# ── Kokoro voice defaults ────────────────────────────────────────────────────
 DEFAULT_VOICE = "am_michael"
 FEMALE_VOICE = "af_heart"
 DEFAULT_DESCRIPTION = (
@@ -67,7 +90,7 @@ DEFAULT_DESCRIPTION = (
 # ── Globals populated on startup ────────────────────────────────────────────
 DEVICE = "cpu"
 pipeline: KPipeline | None = None
-AUDIO_FILES: Dict[str, str] = {}  # id -> /tmp/lore-{id}.mp3
+AUDIO_FILES: Dict[str, str] = {}  # id -> ~/.lore/audio/lore-{id}.mp3
 FIRESTORE = None  # firestore client, set in init_firebase()
 
 
@@ -168,6 +191,13 @@ def load_models():
     print(f"[lore] restored {len(AUDIO_FILES)} cached audio files", flush=True)
 
     init_firebase()
+
+    if ELEVENLABS_API_KEY:
+        print(f"[lore] ElevenLabs mode — skipping Kokoro load (model={EL_MODEL})", flush=True)
+        DEVICE = "elevenlabs"
+        pipeline = True  # sentinel: "ready, but using EL not Kokoro"
+        print(f"[lore] ready. backend=elevenlabs", flush=True)
+        return
 
     DEVICE = pick_device()
     print(f"[lore] loading Kokoro-82M on device={DEVICE} ...", flush=True)
@@ -292,12 +322,103 @@ class SynthRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "device": DEVICE, "ready": pipeline is not None}
+    backend = "elevenlabs" if ELEVENLABS_API_KEY else "kokoro"
+    return {"status": "ok", "device": DEVICE, "backend": backend, "ready": pipeline is not None}
+
+
+def _chars_to_words(characters: list, starts: list, ends: list) -> list:
+    """Convert ElevenLabs character-level alignment into word-level [{start, end}]."""
+    words = []
+    word_start: float | None = None
+    word_end: float = 0.0
+    in_word = False
+
+    for char, s, e in zip(characters, starts, ends):
+        if char == " ":
+            if in_word:
+                words.append({"start": word_start, "end": word_end})
+                in_word = False
+                word_start = None
+        else:
+            if not in_word:
+                word_start = s
+                in_word = True
+            word_end = e
+
+    if in_word and word_start is not None:
+        words.append({"start": word_start, "end": word_end})
+
+    return words
+
+
+def _generate_elevenlabs(text: str, kokoro_voice: str) -> dict:
+    """Call ElevenLabs /with-timestamps, save MP3 directly (no ffmpeg needed),
+    reconstruct word timestamps from character alignment."""
+    el_voice_id = EL_VOICE_MAP.get(kokoro_voice, EL_DEFAULT_VOICE_ID)
+    url = f"{EL_API_BASE}/text-to-speech/{el_voice_id}/with-timestamps"
+    payload = json.dumps({
+        "text": text,
+        "model_id": EL_MODEL,
+        "output_format": "mp3_44100_128",
+    }).encode()
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="ignore")[:400]
+        raise HTTPException(status_code=502, detail=f"ElevenLabs {e.code}: {body}")
+    gen_ms = int((time.perf_counter() - t0) * 1000)
+
+    data = json.loads(raw)
+    mp3_bytes = base64.b64decode(data["audio_base64"])
+    alignment = data.get("alignment", {})
+    words = _chars_to_words(
+        alignment.get("characters", []),
+        alignment.get("character_start_times_seconds", []),
+        alignment.get("character_end_times_seconds", []),
+    )
+
+    audio_id = uuid.uuid4().hex
+    path = os.path.join(OUTPUT_DIR, f"lore-{audio_id}.mp3")
+    with open(path, "wb") as f:
+        f.write(mp3_bytes)
+    AUDIO_FILES[audio_id] = path
+
+    # Estimate duration from last word timestamp; fall back to file size heuristic.
+    audio_duration_s = round(words[-1]["end"], 2) if words else round(len(mp3_bytes) / 16000, 2)
+
+    storage_url = upload_to_storage(path, audio_id)
+    audio_url = storage_url if storage_url else f"/audio/{audio_id}"
+
+    return {
+        "id": audio_id,
+        "audio_url": audio_url,
+        "voice": kokoro_voice,
+        "generation_time_ms": gen_ms,
+        "audio_duration_s": audio_duration_s,
+        "word_count": len(re.findall(r"\S+", text)),
+        "words": [{"start": round(w["start"], 3), "end": round(w["end"], 3)} for w in words],
+    }
 
 
 def _generate(text: str, voice: str) -> dict:
     """Core TTS: text + voice -> stored MP3 + metadata. Shared by /synthesize
-    and /episode."""
+    and /episode. Routes to ElevenLabs when ELEVENLABS_API_KEY is set,
+    otherwise uses local Kokoro."""
+    if ELEVENLABS_API_KEY:
+        return _generate_elevenlabs(text, voice)
+
     t0 = time.perf_counter()
     pcm, words = synthesize_audio_and_words(text, voice)
     gen_ms = int((time.perf_counter() - t0) * 1000)
@@ -324,7 +445,7 @@ def _generate(text: str, voice: str) -> dict:
 
 @app.post("/synthesize")
 def synthesize(req: SynthRequest):
-    if pipeline is None:
+    if not pipeline:
         raise HTTPException(status_code=503, detail="Model still loading")
     text = (req.text or "").strip()
     if not text:
@@ -383,7 +504,7 @@ def episode(req: EpisodeRequest):
     already exists, skip TTS entirely and return the existing audio. All global
     collection writes happen here via the Admin SDK — clients never write them."""
     _require_firestore()
-    if pipeline is None:
+    if not pipeline:
         raise HTTPException(status_code=503, detail="Model still loading")
     text = (req.text or "").strip()
     if not text:
