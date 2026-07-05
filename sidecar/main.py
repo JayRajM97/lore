@@ -27,14 +27,20 @@ import urllib.request
 import urllib.error
 from typing import Dict, Optional
 
-import numpy as np
-import soundfile as sf
-import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from kokoro import KPipeline
+
+try:
+    import numpy as np
+    import soundfile as sf
+    import torch
+    from kokoro import KPipeline
+    _KOKORO_AVAILABLE = True
+except ImportError:
+    np = sf = torch = KPipeline = None
+    _KOKORO_AVAILABLE = False
 
 import hashlib
 from datetime import datetime, timezone
@@ -47,7 +53,7 @@ except ImportError:
     _FIREBASE_AVAILABLE = False
 
 SAMPLE_RATE = 24000
-OUTPUT_DIR = os.path.expanduser("~/.lore/audio")
+OUTPUT_DIR = os.environ.get("AUDIO_DIR", os.path.expanduser("~/.lore/audio"))
 LANG_CODE = "a"  # American English
 
 # Path to Firebase service account key JSON (download from Firebase Console →
@@ -89,8 +95,8 @@ DEFAULT_DESCRIPTION = (
 
 # ── Globals populated on startup ────────────────────────────────────────────
 DEVICE = "cpu"
-pipeline: KPipeline | None = None
-AUDIO_FILES: Dict[str, str] = {}  # id -> ~/.lore/audio/lore-{id}.mp3
+pipeline = None  # KPipeline instance, True (EL sentinel), or None
+AUDIO_FILES: Dict[str, str] = {}  # id -> lore-{id}.mp3 path
 FIRESTORE = None  # firestore client, set in init_firebase()
 
 
@@ -122,6 +128,8 @@ app.add_middleware(
 
 
 def pick_device() -> str:
+    if not _KOKORO_AVAILABLE:
+        return "cpu"
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
@@ -133,12 +141,17 @@ def init_firebase():
     if not _FIREBASE_AVAILABLE:
         print("[lore] firebase-admin not installed — Storage upload disabled", flush=True)
         return
-    if not os.path.exists(SERVICE_ACCOUNT_PATH):
-        print(f"[lore] service account not found at {SERVICE_ACCOUNT_PATH} — Storage upload disabled", flush=True)
-        return
     try:
         if not firebase_admin._apps:
-            cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+            # Cloud Run: JSON content in env var
+            sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+            if sa_json:
+                cred = credentials.Certificate(json.loads(sa_json))
+            elif os.path.exists(SERVICE_ACCOUNT_PATH):
+                cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+            else:
+                print(f"[lore] no Firebase credentials found — Storage upload disabled", flush=True)
+                return
             firebase_admin.initialize_app(cred, {"storageBucket": STORAGE_BUCKET})
         global FIRESTORE
         FIRESTORE = fb_firestore.client()
@@ -199,6 +212,9 @@ def load_models():
         print(f"[lore] ready. backend=elevenlabs", flush=True)
         return
 
+    if not _KOKORO_AVAILABLE:
+        print("[lore] Kokoro not installed — ElevenLabs key required", flush=True)
+        return
     DEVICE = pick_device()
     print(f"[lore] loading Kokoro-82M on device={DEVICE} ...", flush=True)
     try:
@@ -295,7 +311,7 @@ def synthesize_audio_and_words(text: str, voice: str):
     return np.concatenate(chunks), words
 
 
-def pcm_to_mp3(pcm: np.ndarray, path: str):
+def pcm_to_mp3(pcm, path: str):
     """WAV in memory -> ffmpeg -> MP3 on disk."""
     wav_buf = io.BytesIO()
     sf.write(wav_buf, pcm, SAMPLE_RATE, format="WAV", subtype="PCM_16")

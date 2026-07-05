@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const res = await fetch(`${SIDECAR_URL}/health`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error("bad status");
     return NextResponse.json(await res.json());

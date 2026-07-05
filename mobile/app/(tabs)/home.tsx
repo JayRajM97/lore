@@ -11,7 +11,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C } from "../../lib/theme";
 import { Episode, Newsletter } from "../../lib/types";
-import { humanDuration } from "../../lib/format";
+import { humanDuration, episodeDate } from "../../lib/format";
 import { getEpisodes, getFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
@@ -160,6 +160,8 @@ export default function Home() {
                   <Avatar name={featured.sender_name} url={featured.sender_logo_url} size={20} />
                   <Text style={styles.featuredSourceName}>{featured.sender_name.toUpperCase()}</Text>
                   <Text style={styles.featuredDot}>·</Text>
+                  <Text style={styles.featuredDuration}>{episodeDate(featured.received_at)}</Text>
+                  <Text style={styles.featuredDot}>·</Text>
                   <Text style={styles.featuredDuration}>{humanDuration(featured.audio_duration_s)}</Text>
                 </View>
                 <View style={styles.newBadge}>
@@ -195,6 +197,7 @@ export default function Home() {
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
                       <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
+                      <Text style={styles.upNextDate}>{episodeDate(ep.received_at)}</Text>
                     </View>
                     <View style={styles.readyTag}>
                       <Text style={styles.readyTagText}>READY</Text>
@@ -228,7 +231,7 @@ export default function Home() {
                       </Text>
                     )}
                     <View style={styles.latestMeta}>
-                      <Text style={styles.latestDur}>⏱ {humanDuration(ep.audio_duration_s)}</Text>
+                      <Text style={styles.latestDur}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
                       <Pressable onPress={() => openPlayer(ep)}>
                         <View style={styles.latestPlayBtn}>
                           <Text style={styles.latestPlayIcon}>▶</Text>
@@ -394,6 +397,7 @@ const styles = StyleSheet.create({
   },
   upNextSender: { fontSize: 12, color: C.muted },
   upNextTitle: { fontSize: 14, fontWeight: "500", color: C.ink },
+  upNextDate: { fontSize: 11, color: C.muted },
   readyTag: { backgroundColor: C.teal50, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   readyTagText: { fontSize: 9, fontWeight: "700", color: C.teal, letterSpacing: 0.5 },
   upNextDur: { fontSize: 12, color: C.muted },

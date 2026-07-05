@@ -90,7 +90,7 @@ export default function App() {
 
       await soundRef.current?.unloadAsync();
       const { sound } = await Audio.Sound.createAsync(
-        { uri: `${SIDECAR_URL}${data.audio_url}` },
+        { uri: data.audio_url.startsWith("http") ? data.audio_url : `${SIDECAR_URL}${data.audio_url}` },
         { shouldPlay: false, rate: speed, shouldCorrectPitch: true },
         onStatus
       );

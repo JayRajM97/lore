@@ -30,7 +30,11 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
     return NextResponse.json({
       ...data,
-      audio_url: `/api/audio/${data.id}`,
+      // Keep Firebase Storage URLs (absolute); rewrite local sidecar URLs to
+      // same-origin proxy so the browser doesn't need to reach the sidecar directly.
+      audio_url: data.audio_url?.startsWith("http")
+        ? data.audio_url
+        : `/api/audio/${data.id}`,
     });
   } catch {
     return NextResponse.json(

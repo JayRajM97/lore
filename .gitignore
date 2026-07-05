@@ -37,3 +37,4 @@ google-services.json
 # Generated audio (ephemeral in /tmp, but ignore any local copies)
 *.mp3
 *.wav
+.vercel

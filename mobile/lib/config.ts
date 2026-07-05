@@ -19,11 +19,9 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
 ];
 
-// TTS backend (Kokoro sidecar). On web the browser runs on the same machine as
-// the sidecar → localhost. On a physical phone, localhost is the phone itself,
-// so it must hit the Mac's LAN IP. Update LAN_IP to `ipconfig getifaddr en0`.
-import { Platform } from "react-native";
-
-const LAN_IP = "192.168.0.4"; // Mac's current LAN IP (changes between networks)
+// TTS backend. Production: Cloud Run (ElevenLabs mode). Local dev: set
+// EXPO_PUBLIC_BACKEND_URL=http://localhost:8000 (web) or http://<Mac LAN IP>:8000
+// (physical phone) before `expo start`.
+const CLOUD_RUN_URL = "https://lore-sidecar-skm7v5elgq-uc.a.run.app";
 export const BACKEND_URL =
-  Platform.OS === "web" ? "http://localhost:8000" : `http://${LAN_IP}:8000`;
+  process.env.EXPO_PUBLIC_BACKEND_URL || CLOUD_RUN_URL;

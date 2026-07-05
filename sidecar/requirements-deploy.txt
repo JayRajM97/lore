@@ -1,0 +1,6 @@
+# ElevenLabs-only production requirements (no torch/kokoro).
+# Use requirements.txt locally if you want the Kokoro fallback.
+fastapi
+uvicorn[standard]
+pydantic
+firebase-admin
