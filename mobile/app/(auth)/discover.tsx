@@ -18,7 +18,7 @@ import { saveFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { Newsletter } from "../../lib/types";
 import { fetchRecentEmails, FetchedEmail } from "../../lib/gmail";
-import { relativeDate } from "../../lib/format";
+import { relativeDate, episodeDate } from "../../lib/format";
 import Avatar from "../../components/Avatar";
 import { FadeInUp, PressableScale } from "../../components/anim";
 
@@ -40,6 +40,7 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
   const [emails, setEmails] = useState<FetchedEmail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reading, setReading] = useState<FetchedEmail | null>(null);
   const slideAnim = useRef(new Animated.Value(SHEET_H)).current;
 
   // Slide in when nl is set
@@ -54,6 +55,7 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
       // Fetch previews
       setEmails([]);
       setError(null);
+      setReading(null);
       if (token) {
         setLoading(true);
         fetchRecentEmails(nl, token, 2)
@@ -69,6 +71,7 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
   }, [nl?.id]);
 
   function close() {
+    setReading(null);
     Animated.timing(slideAnim, {
       toValue: SHEET_H,
       duration: 240,
@@ -155,7 +158,7 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
 
           {!loading && emails.map((email, i) => (
             <FadeInUp key={email.id} delay={Math.min(i, 8) * 60}>
-              <EmailPreviewCard email={email} index={i} />
+              <EmailPreviewCard email={email} index={i} onOpen={() => setReading(email)} />
             </FadeInUp>
           ))}
 
@@ -178,33 +181,59 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
             </Text>
           </PressableScale>
         </View>
+
+        {/* Full-issue reader — overlays the sheet when an issue is tapped */}
+        {reading && (
+          <View style={sheet.reader}>
+            <View style={sheet.readerBar}>
+              <Pressable onPress={() => setReading(null)} hitSlop={10} style={sheet.readerBack}>
+                <Text style={sheet.readerBackTxt}>‹ Back</Text>
+              </Pressable>
+              <Pressable onPress={close} style={sheet.closeBtn} hitSlop={8}>
+                <Text style={sheet.closeX}>✕</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={sheet.readerContent}
+            >
+              <View style={sheet.readerMeta}>
+                <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={28} />
+                <Text style={sheet.readerSender}>{nl.sender_name}</Text>
+                <Text style={sheet.readerDot}>·</Text>
+                <Text style={sheet.readerDate}>{episodeDate(reading.date)}</Text>
+              </View>
+              <Text style={sheet.readerTitle}>{reading.subject}</Text>
+              <Text style={sheet.readerBody}>{reading.text.trim()}</Text>
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        )}
       </Animated.View>
     </Modal>
   );
 }
 
-function EmailPreviewCard({ email, index }: { email: FetchedEmail; index: number }) {
-  const [expanded, setExpanded] = useState(false);
+function EmailPreviewCard({
+  email, index, onOpen,
+}: { email: FetchedEmail; index: number; onOpen: () => void }) {
   const preview = email.text.trim().replace(/\s+/g, " ").slice(0, 320);
   const hasMore = email.text.trim().length > 320;
 
   return (
-    <PressableScale
-      style={sheet.emailCard}
-      onPress={() => setExpanded((e) => !e)}
-    >
+    <PressableScale style={sheet.emailCard} onPress={onOpen}>
       <View style={sheet.emailCardHeader}>
         <View style={sheet.issueLabel}>
           <Text style={sheet.issueLabelText}>Issue {index === 0 ? "Latest" : "Previous"}</Text>
         </View>
+        <Text style={sheet.emailDate}>{episodeDate(email.date)}</Text>
       </View>
       <Text style={sheet.emailSubject} numberOfLines={2}>{email.subject}</Text>
-      <Text style={sheet.emailPreview} numberOfLines={expanded ? undefined : 4}>
-        {preview}{!expanded && hasMore ? "…" : ""}
+      <Text style={sheet.emailPreview} numberOfLines={4}>
+        {preview}{hasMore ? "…" : ""}
       </Text>
-      {hasMore && (
-        <Text style={sheet.readMore}>{expanded ? "Show less" : "Read more"}</Text>
-      )}
+      <Text style={sheet.readMore}>Read full issue →</Text>
     </PressableScale>
   );
 }
@@ -490,12 +519,26 @@ const sheet = StyleSheet.create({
   errorText: { fontSize: 14, color: C.muted, paddingVertical: 16, textAlign: "center" },
 
   emailCard: { backgroundColor: C.white, borderRadius: RADIUS.card, padding: 16, gap: 8, ...(SHADOW.card as object) },
-  emailCardHeader: { flexDirection: "row", alignItems: "center" },
+  emailCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   issueLabel: { backgroundColor: C.indigo + "18", borderRadius: RADIUS.pill, paddingHorizontal: 7, paddingVertical: 3 },
   issueLabelText: { fontSize: 11, fontWeight: "700", color: C.indigo, letterSpacing: 0.3 },
+  emailDate: { fontSize: 12, fontWeight: "600", color: C.muted },
   emailSubject: { fontSize: 15, fontWeight: "700", color: C.ink, lineHeight: 21 },
   emailPreview: { fontSize: 14, color: C.muted, lineHeight: 21 },
   readMore: { fontSize: 13, fontWeight: "600", color: C.teal },
+
+  // Full-issue reader (overlays the sheet)
+  reader: { ...StyleSheet.absoluteFillObject, backgroundColor: C.bg, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl },
+  readerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
+  readerBack: { paddingVertical: 4, paddingRight: 12 },
+  readerBackTxt: { fontSize: 15, fontWeight: "700", color: C.teal },
+  readerContent: { paddingHorizontal: 22, paddingTop: 4 },
+  readerMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  readerSender: { fontSize: 13, fontWeight: "700", color: C.ink },
+  readerDot: { color: C.muted },
+  readerDate: { fontSize: 13, color: C.muted, fontWeight: "500" },
+  readerTitle: { fontSize: 24, fontWeight: "700", color: C.ink, lineHeight: 32, fontFamily: SERIF, marginBottom: 14 },
+  readerBody: { fontSize: 16, color: C.ink, lineHeight: 26 },
 
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, borderTopWidth: 0.5, borderColor: C.border },
   followBtn: { borderRadius: RADIUS.pill, paddingVertical: 15, alignItems: "center", borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
