@@ -1,13 +1,15 @@
-import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Animated, StyleSheet, Text } from "react-native";
 import { C, RADIUS } from "../lib/theme";
-
-type State = "follow" | "following";
+import { PressableScale } from "./anim";
 
 /**
  * Follow / Following toggle with its own busy state. The parent owns the actual
  * follow/unfollow side effects (Firestore + sidecar); this just reflects status
  * and shows a spinner while the async work runs.
+ *
+ * Not following = solid teal pill; following = soft teal50 pill. The pill does a
+ * small spring pulse whenever the follow state flips.
  */
 export default function FollowButton({
   following,
@@ -21,7 +23,23 @@ export default function FollowButton({
   label?: string; // optional custom busy label, e.g. "Generating…"
 }) {
   const [busy, setBusy] = useState(false);
-  const state: State = following ? "following" : "follow";
+
+  // Pulse on follow/unfollow flip (skipped on first render).
+  const pulse = useRef(new Animated.Value(1)).current;
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    pulse.setValue(0.85);
+    Animated.spring(pulse, {
+      toValue: 1,
+      useNativeDriver: false,
+      speed: 24,
+      bounciness: 14,
+    }).start();
+  }, [following, pulse]);
 
   async function handle() {
     if (busy) return;
@@ -35,21 +53,22 @@ export default function FollowButton({
     }
   }
 
-  const filled = state === "following";
   return (
-    <Pressable
-      onPress={handle}
-      disabled={busy}
-      style={[styles.pill, filled ? styles.filled : styles.outline, busy && styles.busy]}
-    >
-      {busy ? (
-        <ActivityIndicator size="small" color={filled ? C.white : C.teal} />
-      ) : (
-        <Text style={[styles.text, filled ? styles.textFilled : styles.textOutline]}>
-          {filled ? "Following ✓" : label ?? "Follow"}
-        </Text>
-      )}
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale: pulse }] }}>
+      <PressableScale
+        onPress={handle}
+        disabled={busy}
+        style={[styles.pill, following ? styles.following : styles.follow, busy && styles.busy]}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={following ? C.teal : C.white} />
+        ) : (
+          <Text style={[styles.text, following ? styles.textFollowing : styles.textFollow]}>
+            {following ? "Following ✓" : label ?? "Follow"}
+          </Text>
+        )}
+      </PressableScale>
+    </Animated.View>
   );
 }
 
@@ -62,10 +81,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  outline: { borderWidth: 1, borderColor: C.teal, backgroundColor: "transparent" },
-  filled: { backgroundColor: C.teal },
+  follow: { backgroundColor: C.teal },
+  following: { backgroundColor: C.teal50 },
   busy: { opacity: 0.7 },
   text: { fontSize: 13, fontWeight: "600" },
-  textOutline: { color: C.teal },
-  textFilled: { color: C.white },
+  textFollow: { color: C.white },
+  textFollowing: { color: C.teal },
 });

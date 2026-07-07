@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Episode } from "../lib/types";
-import { C } from "../lib/theme";
+import { C, RADIUS, SHADOW } from "../lib/theme";
 import { humanDuration, relativeDate } from "../lib/format";
 import Avatar from "./Avatar";
+import { PressableScale } from "./anim";
 
 export default function EpisodeCard({
   episode,
@@ -16,7 +17,7 @@ export default function EpisodeCard({
   const unplayed = !episode.playback_position_s && !episode.is_completed;
 
   return (
-    <Pressable style={styles.card} onPress={onPressBody}>
+    <PressableScale style={styles.card} onPress={onPressBody}>
       <Avatar name={episode.sender_name} url={episode.sender_logo_url} size={44} />
       <View style={styles.center}>
         <Text style={styles.sender} numberOfLines={1}>
@@ -36,7 +37,7 @@ export default function EpisodeCard({
           <Text style={styles.playIcon}>▶</Text>
         </View>
       </Pressable>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -46,10 +47,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: C.white,
-    borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: C.border,
+    borderRadius: RADIUS.card,
     padding: 12,
+    ...(SHADOW.card as object),
   },
   center: { flex: 1, gap: 2 },
   sender: { fontSize: 13, color: C.muted },
@@ -64,6 +64,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.teal,
     alignItems: "center",
     justifyContent: "center",
+    ...(SHADOW.glow(C.teal) as object),
   },
   playIcon: { color: C.white, fontSize: 14, marginLeft: 2 },
 });

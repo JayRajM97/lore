@@ -13,13 +13,14 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { saveFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { Newsletter } from "../../lib/types";
 import { fetchRecentEmails, FetchedEmail } from "../../lib/gmail";
 import { relativeDate } from "../../lib/format";
 import Avatar from "../../components/Avatar";
+import { FadeInUp, PressableScale } from "../../components/anim";
 
 const MAX_W = 680;
 const SCREEN_H = Dimensions.get("window").height;
@@ -153,7 +154,9 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
           )}
 
           {!loading && emails.map((email, i) => (
-            <EmailPreviewCard key={email.id} email={email} index={i} />
+            <FadeInUp key={email.id} delay={Math.min(i, 8) * 60}>
+              <EmailPreviewCard email={email} index={i} />
+            </FadeInUp>
           ))}
 
           {!loading && !error && emails.length === 0 && (
@@ -165,14 +168,15 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
 
         {/* Follow CTA */}
         <View style={sheet.footer}>
-          <Pressable
-            style={[sheet.followBtn, selected && sheet.followBtnOn]}
+          <PressableScale
+            style={[sheet.followBtn, selected && sheet.followBtnOn, selected && sheet.followGlow]}
             onPress={() => { onToggleFollow(); close(); }}
+            to={0.95}
           >
             <Text style={[sheet.followBtnText, selected && sheet.followBtnTextOn]}>
               {selected ? "✓ Selected · Tap to deselect" : "Select this newsletter"}
             </Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </Animated.View>
     </Modal>
@@ -185,7 +189,7 @@ function EmailPreviewCard({ email, index }: { email: FetchedEmail; index: number
   const hasMore = email.text.trim().length > 320;
 
   return (
-    <Pressable
+    <PressableScale
       style={sheet.emailCard}
       onPress={() => setExpanded((e) => !e)}
     >
@@ -201,7 +205,7 @@ function EmailPreviewCard({ email, index }: { email: FetchedEmail; index: number
       {hasMore && (
         <Text style={sheet.readMore}>{expanded ? "Show less" : "Read more"}</Text>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -251,7 +255,7 @@ export default function Discover() {
       {/* Header */}
       <View style={styles.headerWrap}>
         <View style={styles.headerInner}>
-          <View style={styles.headerTop}>
+          <FadeInUp style={styles.headerTop}>
             <View style={{ flex: 1 }}>
               <Text style={styles.h1}>Select Newsletters</Text>
               <Text style={styles.sub}>
@@ -270,8 +274,8 @@ export default function Discover() {
                 {allSelected ? "Clear all" : "Select all"}
               </Text>
             </Pressable>
-          </View>
-          <View style={styles.searchBox}>
+          </FadeInUp>
+          <FadeInUp delay={60} style={styles.searchBox}>
             <Text style={styles.searchIcon}>⌕</Text>
             <TextInput
               value={q}
@@ -286,7 +290,7 @@ export default function Discover() {
                 <Text style={styles.clearSearch}>✕</Text>
               </Pressable>
             )}
-          </View>
+          </FadeInUp>
         </View>
       </View>
 
@@ -296,14 +300,15 @@ export default function Discover() {
         contentContainerStyle={styles.scroll}
       >
         <View style={styles.inner}>
-          {filtered.map((nl) => (
-            <NewsletterRow
-              key={nl.id}
-              nl={nl}
-              selected={selected.has(nl.id)}
-              onToggle={() => toggle(nl.id)}
-              onView={() => setViewingNl(nl)}
-            />
+          {filtered.map((nl, i) => (
+            <FadeInUp key={nl.id} delay={Math.min(i, 8) * 60}>
+              <NewsletterRow
+                nl={nl}
+                selected={selected.has(nl.id)}
+                onToggle={() => toggle(nl.id)}
+                onView={() => setViewingNl(nl)}
+              />
+            </FadeInUp>
           ))}
           {filtered.length === 0 && (
             <View style={styles.empty}>
@@ -320,17 +325,18 @@ export default function Discover() {
           {selected.size > 0 && (
             <Text style={styles.selectedCount}>{selected.size} selected</Text>
           )}
-          <Pressable
-            style={[styles.cta, selected.size === 0 && styles.ctaOff]}
+          <PressableScale
+            style={[styles.cta, selected.size === 0 ? styles.ctaOff : styles.ctaGlow]}
             disabled={selected.size === 0}
             onPress={start}
+            to={0.95}
           >
             <Text style={styles.ctaText}>
               {selected.size === 0
                 ? "Select newsletters to continue"
                 : "Follow Selected & Start Listening →"}
             </Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </View>
 
@@ -404,12 +410,12 @@ const styles = StyleSheet.create({
   headerWrap: { borderBottomWidth: 0.5, borderColor: C.border, backgroundColor: C.bg },
   headerInner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", padding: 16, paddingBottom: 14, gap: 12 },
   headerTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  h1: { fontSize: 24, fontWeight: "800", color: C.ink, letterSpacing: -0.4 },
+  h1: { fontSize: 24, fontWeight: "800", color: C.ink, fontFamily: SERIF, letterSpacing: -0.4 },
   sub: { fontSize: 14, color: C.muted, marginTop: 2 },
   subBold: { fontWeight: "700", color: C.ink },
   selectAll: { fontSize: 13, color: C.teal, fontWeight: "600", flexShrink: 0, paddingTop: 4 },
 
-  searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surface, borderRadius: 12, paddingHorizontal: 12, height: 42, borderWidth: 0.5, borderColor: C.border },
+  searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.surface, borderRadius: RADIUS.btn, paddingHorizontal: 12, height: 42 },
   searchIcon: { fontSize: 16, color: C.muted },
   searchInput: { flex: 1, fontSize: 14, color: C.ink },
   clearSearch: { fontSize: 14, color: C.muted, paddingHorizontal: 4 },
@@ -417,7 +423,7 @@ const styles = StyleSheet.create({
   scroll: { paddingTop: 8 },
   inner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", paddingHorizontal: 16, gap: 8 },
 
-  row: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingRight: 12, overflow: "hidden" },
+  row: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.white, borderRadius: RADIUS.card, borderWidth: 1.5, borderColor: "transparent", paddingRight: 12, ...(SHADOW.card as object) },
   rowSelected: { borderColor: C.teal, backgroundColor: C.teal50 },
   rowBody: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
   rowContent: { flex: 1, gap: 3 },
@@ -425,13 +431,13 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 15, fontWeight: "700", color: C.ink },
   rowMeta: { fontSize: 12, color: C.muted },
 
-  alreadyBadge: { backgroundColor: C.indigo + "22", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  alreadyBadge: { backgroundColor: C.indigo + "22", borderRadius: RADIUS.pill, paddingHorizontal: 5, paddingVertical: 2 },
   alreadyText: { fontSize: 10, fontWeight: "700", color: C.indigo, letterSpacing: 0.3 },
 
-  viewBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  viewBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: RADIUS.btn, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
   viewBtnText: { fontSize: 12, fontWeight: "600", color: C.muted },
 
-  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  checkbox: { width: 24, height: 24, borderRadius: RADIUS.pill, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   checkboxOn: { borderColor: C.teal, backgroundColor: C.teal },
   checkmark: { color: C.white, fontSize: 13, fontWeight: "700" },
 
@@ -441,8 +447,9 @@ const styles = StyleSheet.create({
   stickyBar: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: C.bg, borderTopWidth: 0.5, borderColor: C.border, paddingTop: 10, paddingBottom: 28 },
   stickyInner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", paddingHorizontal: 16, gap: 6 },
   selectedCount: { fontSize: 13, color: C.muted, textAlign: "center" },
-  cta: { backgroundColor: C.teal, borderRadius: 14, paddingVertical: 16, alignItems: "center", shadowColor: C.teal, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-  ctaOff: { backgroundColor: C.border, shadowOpacity: 0 },
+  cta: { backgroundColor: C.teal, borderRadius: RADIUS.pill, paddingVertical: 16, alignItems: "center" },
+  ctaGlow: { ...(SHADOW.glow(C.teal) as object) },
+  ctaOff: { backgroundColor: C.border },
   ctaText: { color: C.white, fontWeight: "700", fontSize: 15 },
 });
 
@@ -453,7 +460,7 @@ const sheet = StyleSheet.create({
     position: "absolute", bottom: 0, left: 0, right: 0,
     height: SHEET_H,
     backgroundColor: C.bg,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
     overflow: "hidden",
   },
 
@@ -463,13 +470,13 @@ const sheet = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   name: { fontSize: 18, fontWeight: "800", color: C.ink, letterSpacing: -0.3 },
   email: { fontSize: 13, color: C.muted },
-  followingBadge: { backgroundColor: C.teal50, borderRadius: 5, paddingHorizontal: 7, paddingVertical: 2 },
+  followingBadge: { backgroundColor: C.teal50, borderRadius: RADIUS.pill, paddingHorizontal: 7, paddingVertical: 2 },
   followingText: { fontSize: 11, fontWeight: "700", color: C.teal },
   closeBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" },
   closeX: { fontSize: 12, color: C.muted, fontWeight: "700" },
 
   metaRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, paddingBottom: 14 },
-  metaChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.surface, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 0.5, borderColor: C.border },
+  metaChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.surface, borderRadius: RADIUS.pill, paddingHorizontal: 10, paddingVertical: 5 },
   metaIcon: { fontSize: 12 },
   metaLabel: { fontSize: 12, fontWeight: "500", color: C.ink },
 
@@ -482,17 +489,18 @@ const sheet = StyleSheet.create({
   loadingText: { fontSize: 14, color: C.muted },
   errorText: { fontSize: 14, color: C.muted, paddingVertical: 16, textAlign: "center" },
 
-  emailCard: { backgroundColor: C.white, borderRadius: 14, borderWidth: 0.5, borderColor: C.border, padding: 16, gap: 8 },
+  emailCard: { backgroundColor: C.white, borderRadius: RADIUS.card, padding: 16, gap: 8, ...(SHADOW.card as object) },
   emailCardHeader: { flexDirection: "row", alignItems: "center" },
-  issueLabel: { backgroundColor: C.indigo + "18", borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3 },
+  issueLabel: { backgroundColor: C.indigo + "18", borderRadius: RADIUS.pill, paddingHorizontal: 7, paddingVertical: 3 },
   issueLabelText: { fontSize: 11, fontWeight: "700", color: C.indigo, letterSpacing: 0.3 },
   emailSubject: { fontSize: 15, fontWeight: "700", color: C.ink, lineHeight: 21 },
   emailPreview: { fontSize: 14, color: C.muted, lineHeight: 21 },
   readMore: { fontSize: 13, fontWeight: "600", color: C.teal },
 
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, borderTopWidth: 0.5, borderColor: C.border },
-  followBtn: { borderRadius: 14, paddingVertical: 15, alignItems: "center", borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
+  followBtn: { borderRadius: RADIUS.pill, paddingVertical: 15, alignItems: "center", borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
   followBtnOn: { backgroundColor: C.teal, borderColor: C.teal },
+  followGlow: { ...(SHADOW.glow(C.teal) as object) },
   followBtnText: { fontSize: 15, fontWeight: "700", color: C.muted },
   followBtnTextOn: { color: C.white },
 });

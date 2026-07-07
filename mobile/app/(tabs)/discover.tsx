@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { C, RADIUS } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { GlobalNewsletter } from "../../lib/types";
 import {
   currentUid,
@@ -25,6 +25,7 @@ import {
 } from "../../lib/discovery";
 import SectionRow from "../../components/SectionRow";
 import DiscoverCard from "../../components/DiscoverCard";
+import { FadeInUp } from "../../components/anim";
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
@@ -160,8 +161,10 @@ export default function DiscoverScreen() {
               autoCorrect={false}
             />
             <View style={styles.list}>
-              {filtered.map((n) => (
-                <DiscoverCard key={n.sender_hash} variant="row" {...cardProps(n)} />
+              {filtered.map((n, i) => (
+                <FadeInUp key={n.sender_hash} delay={Math.min(i, 8) * 60}>
+                  <DiscoverCard variant="row" {...cardProps(n)} />
+                </FadeInUp>
               ))}
             </View>
           </View>
@@ -174,22 +177,21 @@ export default function DiscoverScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   centered: { alignItems: "center", justifyContent: "center" },
-  content: { paddingVertical: 16, gap: 20, paddingBottom: 120 },
-  h1: { fontSize: 22, fontWeight: "600", color: C.ink, paddingHorizontal: 16 },
+  content: { paddingVertical: 16, gap: 20, paddingBottom: 120, width: "100%", maxWidth: 900, alignSelf: "center" },
+  h1: { fontSize: 24, fontWeight: "600", color: C.ink, paddingHorizontal: 16, fontFamily: SERIF },
   allSection: { gap: 12, paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 17, fontWeight: "600", color: C.ink },
+  sectionTitle: { fontSize: 18, fontWeight: "600", color: C.ink, fontFamily: SERIF },
   search: {
     backgroundColor: C.white,
-    borderWidth: 0.5,
-    borderColor: C.border,
-    borderRadius: RADIUS.btn,
-    paddingHorizontal: 12,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 15,
     color: C.ink,
+    ...(SHADOW.card as object),
   },
   list: { gap: 10 },
-  emptyBox: { marginHorizontal: 16, padding: 20, backgroundColor: C.surface, borderRadius: RADIUS.card, gap: 8 },
+  emptyBox: { marginHorizontal: 16, padding: 20, backgroundColor: C.surface, borderRadius: RADIUS.card, gap: 8, alignItems: "center" },
   emptyTitle: { fontSize: 16, fontWeight: "600", color: C.ink },
-  emptyBody: { fontSize: 14, color: C.muted, lineHeight: 20 },
+  emptyBody: { fontSize: 14, color: C.muted, lineHeight: 20, textAlign: "center" },
 });

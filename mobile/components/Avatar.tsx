@@ -11,11 +11,13 @@ export default function Avatar({
   url?: string | null;
   size?: number;
 }) {
+  // Spotify-show-art "squircle" rather than a full circle.
+  const radius = size * 0.32;
   if (url) {
     return (
       <Image
         source={{ uri: url }}
-        style={{ width: size, height: size, borderRadius: size / 2 }}
+        style={{ width: size, height: size, borderRadius: radius }}
       />
     );
   }
@@ -23,7 +25,7 @@ export default function Avatar({
     <View
       style={[
         styles.fallback,
-        { width: size, height: size, borderRadius: size / 2 },
+        { width: size, height: size, borderRadius: radius },
       ]}
     >
       <Text style={[styles.text, { fontSize: size * 0.38 }]}>{initials(name)}</Text>

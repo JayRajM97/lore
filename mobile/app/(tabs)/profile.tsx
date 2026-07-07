@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { useAuth } from "../../store/authStore";
 import { getFollows, unfollow } from "../../lib/db";
 import { Newsletter } from "../../lib/types";
 import Avatar from "../../components/Avatar";
+import { FadeInUp, PressableScale } from "../../components/anim";
 
 const MAX_W = 680;
 
@@ -46,9 +47,9 @@ export default function Profile() {
       <SafeAreaView style={styles.wrap} edges={["top"]}>
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>Not signed in</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.replace("/(auth)/onboarding")}>
+          <PressableScale style={styles.primaryBtn} onPress={() => router.replace("/(auth)/onboarding")}>
             <Text style={styles.primaryBtnText}>Sign in with Gmail</Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </SafeAreaView>
     );
@@ -69,9 +70,9 @@ export default function Profile() {
           </View>
 
           {!accessToken && (
-            <Pressable style={styles.expiredBanner} onPress={() => router.push("/(auth)/gmail")}>
+            <PressableScale style={styles.expiredBanner} onPress={() => router.push("/(auth)/gmail")}>
               <Text style={styles.expiredText}>Reconnect Gmail to generate new episodes →</Text>
-            </Pressable>
+            </PressableScale>
           )}
 
           {/* Newsletters */}
@@ -85,33 +86,35 @@ export default function Profile() {
               <Text style={styles.emptyHint}>No newsletters yet. Tap Add to scan your inbox.</Text>
             )}
 
-            {follows.map((nl) => (
-              <View key={nl.id} style={styles.nlRow}>
-                <Pressable
-                  style={styles.nlLeft}
-                  onPress={() => router.push(`/newsletter/${encodeURIComponent(nl.id)}`)}
-                >
-                  <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.nlName} numberOfLines={1}>{nl.sender_name}</Text>
-                    <Text style={styles.nlMeta}>{nl.frequency}</Text>
-                  </View>
-                </Pressable>
-                <Pressable style={styles.unfollowBtn} onPress={() => removeFollow(nl)}>
-                  <Text style={styles.unfollowText}>Remove</Text>
-                </Pressable>
-              </View>
+            {follows.map((nl, i) => (
+              <FadeInUp key={nl.id} delay={Math.min(i, 8) * 60}>
+                <View style={styles.nlRow}>
+                  <Pressable
+                    style={styles.nlLeft}
+                    onPress={() => router.push(`/newsletter/${encodeURIComponent(nl.id)}`)}
+                  >
+                    <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={40} />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={styles.nlName} numberOfLines={1}>{nl.sender_name}</Text>
+                      <Text style={styles.nlMeta}>{nl.frequency}</Text>
+                    </View>
+                  </Pressable>
+                  <Pressable style={styles.unfollowBtn} onPress={() => removeFollow(nl)}>
+                    <Text style={styles.unfollowText}>Remove</Text>
+                  </Pressable>
+                </View>
+              </FadeInUp>
             ))}
           </View>
 
           {/* Actions */}
           <View style={styles.actions}>
-            <Pressable style={styles.primaryBtn} onPress={addMore}>
+            <PressableScale style={styles.primaryBtn} onPress={addMore}>
               <Text style={styles.primaryBtnText}>+ Scan for more newsletters</Text>
-            </Pressable>
-            <Pressable style={styles.outlineBtn} onPress={signOut}>
+            </PressableScale>
+            <PressableScale style={styles.outlineBtn} onPress={signOut}>
               <Text style={styles.outlineBtnText}>Sign out</Text>
-            </Pressable>
+            </PressableScale>
           </View>
         </View>
       </ScrollView>
@@ -126,29 +129,31 @@ const styles = StyleSheet.create({
 
   identityCard: {
     flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: C.white, borderRadius: 16,
-    borderWidth: 0.5, borderColor: C.border, padding: 16,
+    backgroundColor: C.white, borderRadius: RADIUS.card,
+    padding: 16,
+    ...(SHADOW.card as object),
   },
   name: { fontSize: 18, fontWeight: "700", color: C.ink },
   email: { fontSize: 13, color: C.muted },
 
   expiredBanner: {
-    backgroundColor: C.amber50, borderRadius: 10,
+    backgroundColor: C.amber50, borderRadius: RADIUS.btn,
     padding: 12, borderWidth: 1, borderColor: C.amber,
   },
   expiredText: { fontSize: 13, color: C.amber, textAlign: "center" },
 
   section: { gap: 10 },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sectionHeading: { fontSize: 18, fontWeight: "700", color: C.ink },
+  sectionHeading: { fontSize: 20, fontWeight: "700", color: C.ink, fontFamily: SERIF },
   count: { fontSize: 13, color: C.muted },
   emptyHint: { fontSize: 14, color: C.muted, textAlign: "center", paddingVertical: 16 },
 
   nlRow: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: C.white, borderRadius: 12,
-    borderWidth: 0.5, borderColor: C.border, paddingVertical: 10, paddingHorizontal: 12,
+    backgroundColor: C.white, borderRadius: RADIUS.card,
+    paddingVertical: 10, paddingHorizontal: 12,
     gap: 10,
+    ...(SHADOW.card as object),
   },
   nlLeft: { flexDirection: "row", alignItems: "center", flex: 1, gap: 10 },
   nlName: { fontSize: 14, fontWeight: "500", color: C.ink },
@@ -158,16 +163,16 @@ const styles = StyleSheet.create({
 
   actions: { gap: 10, marginTop: 4 },
   primaryBtn: {
-    backgroundColor: C.teal, borderRadius: 14,
+    backgroundColor: C.teal, borderRadius: RADIUS.pill,
     paddingVertical: 15, alignItems: "center",
   },
   primaryBtnText: { color: C.white, fontWeight: "700", fontSize: 15 },
   outlineBtn: {
-    borderWidth: 1.5, borderColor: C.border, borderRadius: 14,
+    borderWidth: 1.5, borderColor: C.border, borderRadius: RADIUS.btn,
     paddingVertical: 15, alignItems: "center",
   },
   outlineBtnText: { color: C.muted, fontWeight: "600", fontSize: 15 },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 32 },
-  emptyTitle: { fontSize: 17, fontWeight: "600", color: C.ink },
+  emptyTitle: { fontSize: 18, fontWeight: "600", color: C.ink, fontFamily: SERIF },
 });

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
+import { FadeInUp, PressableScale } from "../../components/anim";
 import { useGoogleAuth, fetchGoogleUser } from "../../lib/auth";
 import { useAuth } from "../../store/authStore";
 import { signIntoFirebase } from "../../lib/firebaseAuth";
@@ -62,18 +63,18 @@ export default function GmailConnect() {
         </View>
 
         {/* Hero */}
-        <View style={styles.hero}>
+        <FadeInUp style={styles.hero}>
           <Text style={styles.heroTitle}>Your personal podcast,{"\n"}from your inbox</Text>
           <Text style={styles.heroSub}>
             Connect Gmail once. Lore scans your newsletters and converts them into
             audio — ready to listen on your commute, run, or morning routine.
           </Text>
-        </View>
+        </FadeInUp>
 
         {/* Feature cards */}
         <View style={styles.features}>
-          {FEATURES.map((f) => (
-            <View key={f.label} style={styles.featureRow}>
+          {FEATURES.map((f, i) => (
+            <FadeInUp key={f.label} delay={120 + Math.min(i, 8) * 60} style={styles.featureRow}>
               <View style={styles.featureIconWrap}>
                 <Text style={styles.featureIcon}>{f.icon}</Text>
               </View>
@@ -81,7 +82,7 @@ export default function GmailConnect() {
                 <Text style={styles.featureLabel}>{f.label}</Text>
                 <Text style={styles.featureDesc}>{f.desc}</Text>
               </View>
-            </View>
+            </FadeInUp>
           ))}
         </View>
 
@@ -95,17 +96,18 @@ export default function GmailConnect() {
 
       {/* CTA pinned to bottom */}
       <View style={styles.footer}>
-        <Pressable
+        <PressableScale
           style={[styles.cta, (busy || !request) && styles.ctaBusy]}
           onPress={connect}
           disabled={busy || !request}
+          to={0.95}
         >
           {busy ? (
             <ActivityIndicator color={C.white} />
           ) : (
             <Text style={styles.ctaText}>Connect Gmail</Text>
           )}
-        </Pressable>
+        </PressableScale>
       </View>
     </SafeAreaView>
   );
@@ -117,22 +119,23 @@ const styles = StyleSheet.create({
 
   logoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   logoMark: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 36, height: 36, borderRadius: RADIUS.chip,
     backgroundColor: C.indigo, alignItems: "center", justifyContent: "center",
   },
   logoMarkText: { color: C.white, fontSize: 18, fontWeight: "800" },
   logoText: { fontSize: 20, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
 
   hero: { gap: 12 },
-  heroTitle: { fontSize: 32, fontWeight: "800", color: C.ink, letterSpacing: -0.6, lineHeight: 38 },
+  heroTitle: { fontSize: 32, fontWeight: "800", color: C.ink, fontFamily: SERIF, letterSpacing: -0.6, lineHeight: 40 },
   heroSub: { fontSize: 15, color: C.muted, lineHeight: 22 },
 
   features: { gap: 16 },
   featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 14 },
   featureIconWrap: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: C.surface, borderWidth: 0.5, borderColor: C.border,
+    width: 44, height: 44, borderRadius: RADIUS.chip,
+    backgroundColor: C.white,
     alignItems: "center", justifyContent: "center", flexShrink: 0,
+    ...(SHADOW.card as object),
   },
   featureIcon: { fontSize: 20 },
   featureText: { flex: 1, gap: 2 },
@@ -143,9 +146,9 @@ const styles = StyleSheet.create({
 
   footer: { paddingHorizontal: 24, paddingBottom: 36, paddingTop: 12 },
   cta: {
-    backgroundColor: C.indigo, borderRadius: 14,
+    backgroundColor: C.indigo, borderRadius: RADIUS.pill,
     paddingVertical: 17, alignItems: "center",
-    shadowColor: C.indigo, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+    ...(SHADOW.glow(C.indigo) as object),
   },
   ctaBusy: { opacity: 0.7 },
   ctaText: { color: C.white, fontWeight: "700", fontSize: 16, letterSpacing: 0.2 },

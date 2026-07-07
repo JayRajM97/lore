@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF } from "../../lib/theme";
 import { getEpisodes, getFollows, saveFollows, unfollow } from "../../lib/db";
 import { Episode, Newsletter } from "../../lib/types";
 import { useAuth } from "../../store/authStore";
@@ -10,6 +10,7 @@ import { usePlayer } from "../../store/playerStore";
 import Avatar from "../../components/Avatar";
 import FrequencyBadge from "../../components/FrequencyBadge";
 import EpisodeCard from "../../components/EpisodeCard";
+import { FadeInUp, PressableScale } from "../../components/anim";
 
 export default function NewsletterDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -93,21 +94,21 @@ export default function NewsletterDetail() {
       <FlatList
         data={eps}
         keyExtractor={(e) => e.id}
-        contentContainerStyle={{ padding: 16, gap: 10 }}
+        contentContainerStyle={{ padding: 16, gap: 10, width: "100%", maxWidth: 720, alignSelf: "center" }}
         ListHeaderComponent={
           nl ? (
             <View style={styles.head}>
               <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={64} />
               <Text style={styles.name}>{nl.sender_name}</Text>
               <FrequencyBadge label={nl.frequency} />
-              <Pressable
+              <PressableScale
                 style={[styles.follow, following && styles.followingBtn]}
                 onPress={toggleFollow}
               >
                 <Text style={[styles.followText, following && styles.followingText]}>
                   {following ? "Following" : "Follow"}
                 </Text>
-              </Pressable>
+              </PressableScale>
               {eps.length > 0 && <Text style={styles.allLabel}>All Episodes</Text>}
             </View>
           ) : (
@@ -117,12 +118,14 @@ export default function NewsletterDetail() {
             </View>
           )
         }
-        renderItem={({ item }) => (
-          <EpisodeCard
-            episode={item}
-            onPressBody={() => openPlayer(item)}
-            onPressPlay={() => openPlayer(item)}
-          />
+        renderItem={({ item, index }) => (
+          <FadeInUp delay={Math.min(index, 8) * 50}>
+            <EpisodeCard
+              episode={item}
+              onPressBody={() => openPlayer(item)}
+              onPressPlay={() => openPlayer(item)}
+            />
+          </FadeInUp>
         )}
         ListEmptyComponent={
           nl ? <Text style={styles.empty}>No episodes generated yet for this newsletter.</Text> : null
@@ -137,8 +140,8 @@ const styles = StyleSheet.create({
   topbar: { paddingHorizontal: 16, paddingVertical: 8 },
   back: { fontSize: 16, color: C.teal },
   head: { alignItems: "center", gap: 8, paddingVertical: 12 },
-  name: { fontSize: 20, fontWeight: "600", color: C.ink, marginTop: 4 },
-  follow: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 9, borderRadius: 100, backgroundColor: C.teal },
+  name: { fontSize: 22, fontWeight: "600", color: C.ink, marginTop: 4, fontFamily: SERIF },
+  follow: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 9, borderRadius: RADIUS.pill, backgroundColor: C.teal },
   followingBtn: { backgroundColor: C.surface, borderWidth: 0.5, borderColor: C.border },
   followText: { color: C.teal50, fontWeight: "600" },
   followingText: { color: C.muted },

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SHADOW } from "../../lib/theme";
 import { Newsletter, Episode } from "../../lib/types";
 import { fetchRecentEmails, FetchedEmail } from "../../lib/gmail";
 import { synthesizeForEpisode } from "../../lib/tts";
@@ -21,6 +21,7 @@ import { currentUid } from "../../lib/discovery";
 import { doc, setDoc, arrayUnion } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import Avatar from "../../components/Avatar";
+import { FadeInUp, PressableScale } from "../../components/anim";
 
 type Stage = "queued" | "fetching" | "generating" | "done" | "failed";
 
@@ -376,51 +377,14 @@ function QueueRow({ item, index }: { item: Item; index: number }) {
   const isDone = stage === "done";
   const isFailed = stage === "failed";
 
-  // Entrance animation — staggered by index
-  const slideAnim = useRef(new Animated.Value(24)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 360,
-        delay: index * 70,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 300,
-        delay: index * 70,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  // Highlight pulse when becoming active
-  const highlightAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (isActive) {
-      Animated.sequence([
-        Animated.timing(highlightAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(highlightAnim, { toValue: 0.7, duration: 600, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.timing(highlightAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
-    }
-  }, [isActive]);
-
   return (
-    <Animated.View
+    <FadeInUp
+      delay={Math.min(index, 8) * 60}
       style={[
         g.qRow,
         isActive && g.qRowActive,
         isDone && g.qRowDone,
         isFailed && g.qRowFail,
-        {
-          opacity: opacityAnim,
-          transform: [{ translateY: slideAnim }],
-        },
       ]}
     >
       <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={42} />
@@ -465,7 +429,7 @@ function QueueRow({ item, index }: { item: Item; index: number }) {
           <Text style={g.qBadgeNum}>⏸</Text>
         )}
       </View>
-    </Animated.View>
+    </FadeInUp>
   );
 }
 
@@ -500,8 +464,8 @@ function DoneSection({ items }: { items: Item[] }) {
     >
       <Text style={g.sectionLabel}>Just Generated</Text>
       <View style={g.doneList}>
-        {readyItems.map((it) => (
-          <View key={it.newsletter.id} style={g.doneRow}>
+        {readyItems.map((it, i) => (
+          <FadeInUp key={it.newsletter.id} delay={Math.min(i, 8) * 60} style={g.doneRow}>
             <Avatar
               name={it.newsletter.sender_name}
               url={it.newsletter.sender_logo_url}
@@ -519,7 +483,7 @@ function DoneSection({ items }: { items: Item[] }) {
             <View style={g.readyPill}>
               <Text style={g.readyPillText}>READY</Text>
             </View>
-          </View>
+          </FadeInUp>
         ))}
       </View>
     </Animated.View>
@@ -539,8 +503,6 @@ function DoneBar({ onPress, count }: { onPress: () => void; count: number }) {
     }).start();
   }, []);
 
-  const scale = useRef(new Animated.Value(1)).current;
-
   return (
     <Animated.View
       style={[
@@ -553,22 +515,11 @@ function DoneBar({ onPress, count }: { onPress: () => void; count: number }) {
         },
       ]}
     >
-      <Pressable
-        style={g.doneBtn}
-        onPress={onPress}
-        onPressIn={() =>
-          Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 0 }).start()
-        }
-        onPressOut={() =>
-          Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 4 }).start()
-        }
-      >
-        <Animated.View style={[g.doneBtnInner, { transform: [{ scale }] }]}>
-          <Text style={g.doneBtnText}>
-            Go to my feed →
-          </Text>
-        </Animated.View>
-      </Pressable>
+      <PressableScale style={g.doneBtnInner} onPress={onPress} to={0.95}>
+        <Text style={g.doneBtnText}>
+          Go to my feed →
+        </Text>
+      </PressableScale>
     </Animated.View>
   );
 }
@@ -597,15 +548,13 @@ const g = StyleSheet.create({
     backgroundColor: C.surface,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 0.5,
-    borderColor: C.border,
   },
   backIcon: { fontSize: 18, color: C.ink },
   headerCenter: { flexDirection: "row", alignItems: "center", gap: 8 },
   logoMark: {
     width: 28,
     height: 28,
-    borderRadius: 8,
+    borderRadius: RADIUS.chip,
     backgroundColor: C.indigo,
     alignItems: "center",
     justifyContent: "center",
@@ -624,6 +573,7 @@ const g = StyleSheet.create({
   globalFill: {
     height: 3,
     backgroundColor: C.indigo,
+    borderRadius: RADIUS.pill,
   },
 
   // Banner
@@ -632,10 +582,11 @@ const g = StyleSheet.create({
     alignItems: "center",
     gap: 14,
     backgroundColor: C.surface,
-    borderRadius: 18,
+    borderRadius: RADIUS.card,
     padding: 18,
-    borderWidth: 1,
-    borderColor: C.border,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    ...(SHADOW.card as object),
   },
   bannerDone: { backgroundColor: C.teal50, borderColor: C.teal },
   bannerIconWrap: {
@@ -645,10 +596,9 @@ const g = StyleSheet.create({
     backgroundColor: C.white,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 0.5,
-    borderColor: C.border,
+    ...(SHADOW.card as object),
   },
-  bannerIconWrapDone: { backgroundColor: C.teal, borderColor: C.teal },
+  bannerIconWrapDone: { backgroundColor: C.teal },
   bannerDoneIcon: { fontSize: 20, color: C.white },
   bannerTitle: { fontSize: 16, fontWeight: "700", color: C.ink },
   bannerSub: { fontSize: 13, color: C.muted },
@@ -663,11 +613,12 @@ const g = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: C.white,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.border,
+    borderRadius: RADIUS.card,
+    borderWidth: 1.5,
+    borderColor: "transparent",
     paddingHorizontal: 14,
     paddingVertical: 13,
+    ...(SHADOW.card as object),
   },
   qRowActive: { borderColor: C.indigo, backgroundColor: "#F5F4FF" },
   qRowDone: { borderColor: C.teal, backgroundColor: C.teal50 },
@@ -684,11 +635,9 @@ const g = StyleSheet.create({
     backgroundColor: C.surface,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 0.5,
-    borderColor: C.border,
     flexShrink: 0,
   },
-  qBadgeActive: { borderColor: C.indigo },
+  qBadgeActive: { borderWidth: 1, borderColor: C.indigo },
   qBadgeDone: { backgroundColor: C.teal, borderColor: C.teal },
   qBadgeFail: { backgroundColor: C.coral, borderColor: C.coral },
   qBadgeIcon: { fontSize: 14, fontWeight: "700", color: C.white },
@@ -702,16 +651,15 @@ const g = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: C.white,
-    borderRadius: 14,
-    borderWidth: 0.5,
-    borderColor: C.border,
+    borderRadius: RADIUS.card,
     padding: 12,
+    ...(SHADOW.card as object),
   },
   doneName: { fontSize: 14, fontWeight: "600", color: C.ink },
   doneMeta: { fontSize: 12, color: C.muted },
   readyPill: {
     backgroundColor: C.teal50,
-    borderRadius: 6,
+    borderRadius: RADIUS.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
@@ -725,16 +673,12 @@ const g = StyleSheet.create({
     borderColor: C.border,
     backgroundColor: C.bg,
   },
-  doneBtn: { borderRadius: 14, overflow: "hidden" },
   doneBtnInner: {
     backgroundColor: C.teal,
-    borderRadius: 14,
+    borderRadius: RADIUS.pill,
     paddingVertical: 16,
     alignItems: "center",
-    shadowColor: C.teal,
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
+    ...(SHADOW.glow(C.teal) as object),
   },
   doneBtnText: { color: C.white, fontWeight: "700", fontSize: 16 },
 });

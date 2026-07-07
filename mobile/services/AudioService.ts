@@ -68,7 +68,7 @@ class AudioServiceImpl {
         positionMillis: startMs,
         rate: opts?.rate ?? 1,
         shouldCorrectPitch: true,
-        progressUpdateIntervalMillis: 250,
+        progressUpdateIntervalMillis: 100,
       },
       this.handleStatus
     );

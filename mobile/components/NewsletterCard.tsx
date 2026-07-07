@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Newsletter } from "../lib/types";
-import { C } from "../lib/theme";
+import { C, RADIUS, SHADOW } from "../lib/theme";
 import { relativeDate } from "../lib/format";
 import Avatar from "./Avatar";
 import FrequencyBadge from "./FrequencyBadge";
@@ -42,11 +42,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     backgroundColor: C.white,
-    borderRadius: 14,
+    borderRadius: RADIUS.card,
+    // Border stays 1.5 (transparent) so toggling selection never shifts layout;
+    // unselected cards read as soft shadowed cards instead of outlined ones.
     borderWidth: 1.5,
-    borderColor: C.border,
+    borderColor: "transparent",
     paddingVertical: 12,
     paddingHorizontal: 14,
+    ...(SHADOW.card as object),
   },
   cardOn: {
     borderColor: C.teal,

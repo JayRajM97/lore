@@ -10,13 +10,14 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { Episode, Newsletter } from "../../lib/types";
 import { getEpisodes, getFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
 import Avatar from "../../components/Avatar";
 import EpisodeCard from "../../components/EpisodeCard";
+import { FadeInUp, PressableScale } from "../../components/anim";
 
 const MAX_W = 680;
 
@@ -146,18 +147,19 @@ export default function Discover() {
                   <Text style={styles.sectionCount}>{allFollows.length}</Text>
                 </View>
                 <View style={styles.nlList}>
-                  {allFollows.map((nl) => (
-                    <NlRow
-                      key={nl.id}
-                      nl={nl}
-                      onPress={() => {}}
-                      showEpisodeCount
-                    />
+                  {allFollows.map((nl, i) => (
+                    <FadeInUp key={nl.id} delay={Math.min(i, 8) * 60}>
+                      <NlRow
+                        nl={nl}
+                        onPress={() => {}}
+                        showEpisodeCount
+                      />
+                    </FadeInUp>
                   ))}
                 </View>
-                <Pressable style={styles.addMoreBtn} onPress={() => router.push("/(auth)/scan")}>
+                <PressableScale style={styles.addMoreBtn} onPress={() => router.push("/(auth)/scan")}>
                   <Text style={styles.addMoreText}>+ Scan for more newsletters</Text>
-                </Pressable>
+                </PressableScale>
               </View>
             )}
 
@@ -171,9 +173,9 @@ export default function Discover() {
                 <Text style={styles.emptySubtext}>
                   Connect Gmail to scan your inbox for newsletter subscriptions.
                 </Text>
-                <Pressable style={styles.connectBtn} onPress={() => router.push("/(auth)/gmail")}>
+                <PressableScale style={styles.connectBtn} onPress={() => router.push("/(auth)/gmail")}>
                   <Text style={styles.connectBtnText}>Connect Gmail</Text>
-                </Pressable>
+                </PressableScale>
               </View>
             )}
 
@@ -182,13 +184,14 @@ export default function Discover() {
               <View style={styles.section}>
                 <Text style={styles.sectionHeading}>Recent Episodes</Text>
                 <View style={{ gap: 8 }}>
-                  {allEpisodes.slice(0, 5).map((ep) => (
-                    <EpisodeCard
-                      key={ep.id}
-                      episode={ep}
-                      onPressBody={() => openPlayer(ep)}
-                      onPressPlay={() => openPlayer(ep)}
-                    />
+                  {allEpisodes.slice(0, 5).map((ep, i) => (
+                    <FadeInUp key={ep.id} delay={Math.min(i, 8) * 60}>
+                      <EpisodeCard
+                        episode={ep}
+                        onPressBody={() => openPlayer(ep)}
+                        onPressPlay={() => openPlayer(ep)}
+                      />
+                    </FadeInUp>
                   ))}
                 </View>
               </View>
@@ -214,7 +217,7 @@ function NlRow({
     : 8;
 
   return (
-    <Pressable style={styles.nlRow} onPress={onPress}>
+    <PressableScale style={styles.nlRow} onPress={onPress}>
       <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={44} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={styles.nlName} numberOfLines={1}>{nl.sender_name}</Text>
@@ -226,19 +229,19 @@ function NlRow({
       <View style={styles.nlFollowBadge}>
         <Text style={styles.nlFollowText}>Following</Text>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
 
-  searchWrap: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 0.5, borderColor: C.border },
+  searchWrap: { paddingHorizontal: 16, paddingVertical: 10 },
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.surface, borderRadius: 12,
-    paddingHorizontal: 12, height: 44,
-    borderWidth: 0.5, borderColor: C.border,
+    backgroundColor: C.white, borderRadius: RADIUS.pill,
+    paddingHorizontal: 16, height: 44,
+    ...(SHADOW.card as object),
   },
   searchIcon: { fontSize: 18, color: C.muted },
   searchInput: { flex: 1, fontSize: 15, color: C.ink },
@@ -247,9 +250,9 @@ const styles = StyleSheet.create({
   inner: { maxWidth: MAX_W, alignSelf: "center", width: "100%", padding: 16, gap: 28 },
   section: { gap: 12 },
   sectionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  sectionHeading: { fontSize: 20, fontWeight: "700", color: C.ink, letterSpacing: -0.2 },
+  sectionHeading: { fontSize: 22, fontWeight: "700", color: C.ink, letterSpacing: -0.2, fontFamily: SERIF },
   sectionCount: {
-    backgroundColor: C.surface, borderRadius: 100,
+    backgroundColor: C.surface, borderRadius: RADIUS.pill,
     paddingHorizontal: 8, paddingVertical: 2,
     fontSize: 12, fontWeight: "600", color: C.muted,
   },
@@ -258,33 +261,33 @@ const styles = StyleSheet.create({
   nlList: { gap: 8 },
   nlRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: C.white, borderRadius: 14,
-    borderWidth: 0.5, borderColor: C.border,
+    backgroundColor: C.white, borderRadius: RADIUS.card,
     paddingHorizontal: 14, paddingVertical: 12,
+    ...(SHADOW.card as object),
   },
   nlName: { fontSize: 15, fontWeight: "600", color: C.ink },
   nlMeta: { fontSize: 12, color: C.muted },
   nlFollowBadge: {
-    backgroundColor: C.teal50, borderRadius: 6,
+    backgroundColor: C.teal50, borderRadius: RADIUS.chip,
     paddingHorizontal: 8, paddingVertical: 4,
   },
   nlFollowText: { fontSize: 11, fontWeight: "700", color: C.teal },
 
   addMoreBtn: {
     borderWidth: 1.5, borderColor: C.teal, borderStyle: "dashed",
-    borderRadius: 12, paddingVertical: 12, alignItems: "center",
+    borderRadius: RADIUS.btn, paddingVertical: 12, alignItems: "center",
   },
   addMoreText: { fontSize: 14, color: C.teal, fontWeight: "600" },
 
   emptyCenter: { alignItems: "center", paddingVertical: 48, paddingHorizontal: 32, gap: 12 },
   emptyIconWrap: {
-    width: 64, height: 64, borderRadius: 20,
+    width: 64, height: 64, borderRadius: RADIUS.card,
     backgroundColor: C.surface, alignItems: "center", justifyContent: "center", marginBottom: 4,
   },
   emptyIcon: { fontSize: 28, color: C.muted },
-  emptyHeading: { fontSize: 20, fontWeight: "700", color: C.ink },
+  emptyHeading: { fontSize: 21, fontWeight: "700", color: C.ink, fontFamily: SERIF },
   emptySubtext: { fontSize: 14, color: C.muted, textAlign: "center", lineHeight: 20 },
   emptyText: { fontSize: 15, color: C.muted, textAlign: "center" },
-  connectBtn: { backgroundColor: C.indigo, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 28, marginTop: 4 },
+  connectBtn: { backgroundColor: C.indigo, borderRadius: RADIUS.pill, paddingVertical: 14, paddingHorizontal: 28, marginTop: 4 },
   connectBtnText: { color: C.white, fontWeight: "700", fontSize: 15 },
 });

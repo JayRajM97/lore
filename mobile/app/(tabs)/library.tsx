@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { getEpisodes, getFollows } from "../../lib/db";
 import { Episode, Newsletter } from "../../lib/types";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
 import Avatar from "../../components/Avatar";
 import EpisodeCard from "../../components/EpisodeCard";
+import { FadeInUp, PressableScale } from "../../components/anim";
+import { CONTENT } from "../../lib/responsive";
 
 const TABS = ["Episodes", "Following"] as const;
 
@@ -44,6 +46,7 @@ export default function Library() {
 
   return (
     <SafeAreaView style={styles.wrap} edges={["top"]}>
+      <View style={styles.column}>
       <Text style={styles.h1}>Library</Text>
       <View style={styles.tabs}>
         {TABS.map((t) => (
@@ -74,12 +77,14 @@ export default function Library() {
               onCta={() => router.push("/(auth)/scan")}
             />
           }
-          renderItem={({ item }) => (
-            <EpisodeCard
-              episode={item}
-              onPressBody={() => { play(item); router.push("/player"); }}
-              onPressPlay={() => { play(item); router.push("/player"); }}
-            />
+          renderItem={({ item, index }) => (
+            <FadeInUp delay={Math.min(index, 8) * 50}>
+              <EpisodeCard
+                episode={item}
+                onPressBody={() => { play(item); router.push("/player"); }}
+                onPressPlay={() => { play(item); router.push("/player"); }}
+              />
+            </FadeInUp>
           )}
         />
       ) : (
@@ -91,15 +96,18 @@ export default function Library() {
           columnWrapperStyle={{ gap: 12 }}
           contentContainerStyle={{ padding: 16, gap: 12 }}
           ListEmptyComponent={<EmptyState text="Not following anyone yet" sub="Follow newsletters to see them here." />}
-          renderItem={({ item }) => (
-            <View style={styles.gridCard}>
-              <Avatar name={item.sender_name} url={item.sender_logo_url} size={56} />
-              <Text style={styles.gridName} numberOfLines={1}>{item.sender_name}</Text>
-              <Text style={styles.gridMeta}>{item.frequency}</Text>
-            </View>
+          renderItem={({ item, index }) => (
+            <FadeInUp delay={Math.min(index, 8) * 50} style={{ flex: 1 }}>
+              <View style={styles.gridCard}>
+                <Avatar name={item.sender_name} url={item.sender_logo_url} size={56} />
+                <Text style={styles.gridName} numberOfLines={1}>{item.sender_name}</Text>
+                <Text style={styles.gridMeta}>{item.frequency}</Text>
+              </View>
+            </FadeInUp>
           )}
         />
       )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -120,9 +128,9 @@ function EmptyState({
       <Text style={styles.emptyText}>{text}</Text>
       {sub && <Text style={styles.emptySub}>{sub}</Text>}
       {cta && onCta && (
-        <Pressable style={styles.emptyCta} onPress={onCta}>
+        <PressableScale style={styles.emptyCta} onPress={onCta}>
           <Text style={styles.emptyCtaText}>{cta}</Text>
-        </Pressable>
+        </PressableScale>
       )}
     </View>
   );
@@ -130,19 +138,20 @@ function EmptyState({
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
-  h1: { fontSize: 24, fontWeight: "700", color: C.ink, paddingHorizontal: 16, paddingTop: 8, letterSpacing: -0.3 },
+  column: { flex: 1, width: "100%", maxWidth: CONTENT.feed, alignSelf: "center" },
+  h1: { fontSize: 26, fontWeight: "700", color: C.ink, paddingHorizontal: 16, paddingTop: 8, letterSpacing: -0.3, fontFamily: SERIF },
   tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
-  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100, backgroundColor: C.surface },
-  tabOn: { backgroundColor: C.teal50 },
+  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.pill, backgroundColor: C.surface },
+  tabOn: { backgroundColor: C.teal50, ...(SHADOW.card as object) },
   tabText: { fontSize: 13, color: C.muted, fontWeight: "500" },
-  tabTextOn: { color: C.teal },
+  tabTextOn: { color: C.teal, fontWeight: "700" },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  gridCard: { flex: 1, backgroundColor: C.white, borderRadius: 12, borderWidth: 0.5, borderColor: C.border, padding: 16, alignItems: "center", gap: 6 },
+  gridCard: { backgroundColor: C.white, borderRadius: RADIUS.card, padding: 16, alignItems: "center", gap: 6, ...(SHADOW.card as object) },
   gridName: { fontSize: 14, fontWeight: "500", color: C.ink, marginTop: 4 },
   gridMeta: { fontSize: 12, color: C.muted },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 8, marginTop: 80 },
-  emptyText: { fontSize: 17, fontWeight: "600", color: C.ink },
+  emptyText: { fontSize: 18, fontWeight: "600", color: C.ink, fontFamily: SERIF },
   emptySub: { fontSize: 14, color: C.muted, textAlign: "center" },
-  emptyCta: { marginTop: 12, backgroundColor: C.teal, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  emptyCta: { marginTop: 12, backgroundColor: C.teal, borderRadius: RADIUS.pill, paddingVertical: 12, paddingHorizontal: 24 },
   emptyCtaText: { color: C.white, fontWeight: "600" },
 });

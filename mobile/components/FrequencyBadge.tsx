@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { C } from "../lib/theme";
+import { C, RADIUS } from "../lib/theme";
 
 export default function FrequencyBadge({ label }: { label: string }) {
   return (
@@ -12,7 +12,7 @@ export default function FrequencyBadge({ label }: { label: string }) {
 const styles = StyleSheet.create({
   pill: {
     backgroundColor: C.surface,
-    borderRadius: 100,
+    borderRadius: RADIUS.pill,
     paddingHorizontal: 10,
     paddingVertical: 3,
     alignSelf: "flex-start",

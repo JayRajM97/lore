@@ -9,18 +9,21 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { Episode, Newsletter } from "../../lib/types";
 import { humanDuration, episodeDate } from "../../lib/format";
 import { getEpisodes, getFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
 import Avatar from "../../components/Avatar";
+import { FadeInUp, PressableScale } from "../../components/anim";
+import { useIsDesktop, CONTENT } from "../../lib/responsive";
 
 const MAX_W = 720;
 
 export default function Home() {
   const router = useRouter();
+  const desktop = useIsDesktop();
   const user = useAuth((s) => s.user);
   const accessToken = useAuth((s) => s.accessToken);
   const play = usePlayer((s) => s.play);
@@ -135,7 +138,7 @@ export default function Home() {
   return (
     <SafeAreaView style={styles.wrap} edges={["top"]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.inner}>
+        <View style={[styles.inner, desktop && { maxWidth: CONTENT.feedWide, padding: 24 }]}>
           <HomeHeader user={user} onSettings={() => router.push("/profile")} onSync={syncLatest} syncing={syncing} />
 
           {showReadyBanner && (
@@ -153,32 +156,36 @@ export default function Home() {
 
           {/* Featured episode — large card */}
           {featured && (
-            <View style={styles.featuredCard}>
-              {/* newsletter label */}
-              <View style={styles.featuredTop}>
-                <View style={styles.featuredSource}>
-                  <Avatar name={featured.sender_name} url={featured.sender_logo_url} size={20} />
-                  <Text style={styles.featuredSourceName}>{featured.sender_name.toUpperCase()}</Text>
-                  <Text style={styles.featuredDot}>·</Text>
-                  <Text style={styles.featuredDuration}>{episodeDate(featured.received_at)}</Text>
-                  <Text style={styles.featuredDot}>·</Text>
-                  <Text style={styles.featuredDuration}>{humanDuration(featured.audio_duration_s)}</Text>
+            <FadeInUp>
+              <View style={styles.featuredCard}>
+                {/* newsletter label */}
+                <View style={styles.featuredTop}>
+                  <View style={styles.featuredSource}>
+                    <Avatar name={featured.sender_name} url={featured.sender_logo_url} size={20} />
+                    <Text style={styles.featuredSourceName}>{featured.sender_name.toUpperCase()}</Text>
+                    <Text style={styles.featuredDot}>·</Text>
+                    <Text style={styles.featuredDuration}>{episodeDate(featured.received_at)}</Text>
+                    <Text style={styles.featuredDot}>·</Text>
+                    <Text style={styles.featuredDuration}>{humanDuration(featured.audio_duration_s)}</Text>
+                  </View>
+                  <View style={styles.newBadge}>
+                    <Text style={styles.newBadgeText}>New</Text>
+                  </View>
                 </View>
-                <View style={styles.newBadge}>
-                  <Text style={styles.newBadgeText}>New</Text>
-                </View>
+                <Text style={styles.featuredTitle} numberOfLines={3}>{featured.subject}</Text>
+                {featured.raw_text && (
+                  <Text style={styles.featuredPreview} numberOfLines={2}>
+                    {featured.raw_text.slice(0, 120)}…
+                  </Text>
+                )}
+                <PressableScale style={styles.playNowBtn} to={0.95} onPress={() => openPlayer(featured)}>
+                  <View style={styles.playNowInner}>
+                    <Text style={styles.playNowIcon}>▶</Text>
+                    <Text style={styles.playNowText}>Play Now</Text>
+                  </View>
+                </PressableScale>
               </View>
-              <Text style={styles.featuredTitle} numberOfLines={3}>{featured.subject}</Text>
-              {featured.raw_text && (
-                <Text style={styles.featuredPreview} numberOfLines={2}>
-                  {featured.raw_text.slice(0, 120)}…
-                </Text>
-              )}
-              <Pressable style={styles.playNowBtn} onPress={() => openPlayer(featured)}>
-                <Text style={styles.playNowIcon}>▶</Text>
-                <Text style={styles.playNowText}>Play Now</Text>
-              </Pressable>
-            </View>
+            </FadeInUp>
           )}
 
           {/* Up Next row */}
@@ -191,19 +198,21 @@ export default function Home() {
                 </Pressable>
               </View>
               <View style={styles.upNextList}>
-                {upNext.map((ep) => (
-                  <Pressable key={ep.id} style={styles.upNextRow} onPress={() => openPlayer(ep)}>
-                    <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
-                      <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
-                      <Text style={styles.upNextDate}>{episodeDate(ep.received_at)}</Text>
-                    </View>
-                    <View style={styles.readyTag}>
-                      <Text style={styles.readyTagText}>READY</Text>
-                    </View>
-                    <Text style={styles.upNextDur}>{humanDuration(ep.audio_duration_s)}</Text>
-                  </Pressable>
+                {upNext.map((ep, i) => (
+                  <FadeInUp key={ep.id} delay={i * 70}>
+                    <PressableScale style={styles.upNextRow} onPress={() => openPlayer(ep)}>
+                      <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
+                        <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
+                        <Text style={styles.upNextDate}>{episodeDate(ep.received_at)}</Text>
+                      </View>
+                      <View style={styles.readyTag}>
+                        <Text style={styles.readyTagText}>READY</Text>
+                      </View>
+                      <Text style={styles.upNextDur}>{humanDuration(ep.audio_duration_s)}</Text>
+                    </PressableScale>
+                  </FadeInUp>
                 ))}
               </View>
             </View>
@@ -219,26 +228,26 @@ export default function Home() {
                 </Pressable>
               </View>
               <View style={styles.latestGrid}>
-                {latest.slice(0, 6).map((ep) => (
-                  <Pressable key={ep.id} style={styles.latestCard} onPress={() => openPlayer(ep)}>
-                    <Text style={styles.latestSource} numberOfLines={1}>
-                      {ep.sender_name.toUpperCase()}
-                    </Text>
-                    <Text style={styles.latestTitle} numberOfLines={3}>{ep.subject}</Text>
-                    {ep.raw_text && (
-                      <Text style={styles.latestPreview} numberOfLines={2}>
-                        {ep.raw_text.slice(0, 80)}…
+                {latest.slice(0, 6).map((ep, i) => (
+                  <FadeInUp key={ep.id} delay={i * 60} style={[styles.latestSlot, desktop && styles.latestSlotDesktop]}>
+                    <PressableScale style={styles.latestCard} onPress={() => openPlayer(ep)}>
+                      <Text style={styles.latestSource} numberOfLines={1}>
+                        {ep.sender_name.toUpperCase()}
                       </Text>
-                    )}
-                    <View style={styles.latestMeta}>
-                      <Text style={styles.latestDur}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
-                      <Pressable onPress={() => openPlayer(ep)}>
+                      <Text style={styles.latestTitle} numberOfLines={3}>{ep.subject}</Text>
+                      {ep.raw_text && (
+                        <Text style={styles.latestPreview} numberOfLines={2}>
+                          {ep.raw_text.slice(0, 80)}…
+                        </Text>
+                      )}
+                      <View style={styles.latestMeta}>
+                        <Text style={styles.latestDur}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
                         <View style={styles.latestPlayBtn}>
                           <Text style={styles.latestPlayIcon}>▶</Text>
                         </View>
-                      </Pressable>
-                    </View>
-                  </Pressable>
+                      </View>
+                    </PressableScale>
+                  </FadeInUp>
                 ))}
               </View>
             </View>
@@ -353,47 +362,51 @@ const styles = StyleSheet.create({
   settingsBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", borderWidth: 0.5, borderColor: C.border },
   settingsIcon: { fontSize: 16, color: C.muted },
 
-  readyBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.teal50, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.teal },
+  readyBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.teal50, borderRadius: RADIUS.card, padding: 14, borderWidth: 1, borderColor: C.teal },
   readyBannerIcon: { fontSize: 16, color: C.teal },
   readyBannerText: { fontSize: 14, fontWeight: "600", color: C.teal },
 
-  tokenBanner: { backgroundColor: C.amber50, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: C.amber },
+  tokenBanner: { backgroundColor: C.amber50, borderRadius: RADIUS.btn, padding: 12, borderWidth: 1, borderColor: C.amber },
   tokenText: { fontSize: 13, color: C.amber, textAlign: "center" },
 
   section: { gap: 12 },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sectionLabel: { fontSize: 12, fontWeight: "600", color: C.muted, letterSpacing: 1.2 },
-  sectionHeading: { fontSize: 20, fontWeight: "700", color: C.ink, letterSpacing: -0.2 },
+  sectionHeading: { fontSize: 21, fontWeight: "700", color: C.ink, letterSpacing: -0.2, fontFamily: SERIF },
   viewAll: { fontSize: 13, color: C.teal, fontWeight: "600" },
   nothingYet: { fontSize: 11, color: C.muted, letterSpacing: 0.8 },
 
   // featured card
   featuredCard: {
-    backgroundColor: C.ink, borderRadius: 20, padding: 20, gap: 12,
+    backgroundColor: C.ink, borderRadius: RADIUS.xl, padding: 22, gap: 12,
+    ...(SHADOW.card as object),
   },
   featuredTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   featuredSource: { flexDirection: "row", alignItems: "center", gap: 6 },
   featuredSourceName: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.6)", letterSpacing: 0.8 },
   featuredDot: { color: "rgba(255,255,255,0.3)", fontSize: 12 },
   featuredDuration: { fontSize: 11, color: "rgba(255,255,255,0.5)" },
-  newBadge: { backgroundColor: C.teal, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 3 },
+  newBadge: { backgroundColor: C.teal, borderRadius: RADIUS.pill, paddingHorizontal: 10, paddingVertical: 3 },
   newBadgeText: { fontSize: 11, fontWeight: "700", color: C.white },
-  featuredTitle: { fontSize: 26, fontWeight: "800", color: C.white, lineHeight: 32, letterSpacing: -0.4 },
+  featuredTitle: { fontSize: 27, fontWeight: "700", color: C.white, lineHeight: 34, letterSpacing: -0.2, fontFamily: SERIF },
   featuredPreview: { fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 20 },
-  playNowBtn: {
+  playNowBtn: { alignSelf: "flex-start" },
+  playNowInner: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.teal, borderRadius: 12,
-    paddingVertical: 14, paddingHorizontal: 20, alignSelf: "flex-start",
+    backgroundColor: C.teal, borderRadius: RADIUS.pill,
+    paddingVertical: 14, paddingHorizontal: 22,
+    ...(SHADOW.glow(C.teal) as object),
   },
   playNowIcon: { color: C.white, fontSize: 14 },
   playNowText: { color: C.white, fontWeight: "700", fontSize: 15 },
 
   // up next
-  upNextList: { gap: 8 },
+  upNextList: { gap: 10 },
   upNextRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: C.white, borderRadius: 12,
-    borderWidth: 0.5, borderColor: C.border, padding: 12,
+    backgroundColor: C.white, borderRadius: RADIUS.card,
+    padding: 13,
+    ...(SHADOW.card as object),
   },
   upNextSender: { fontSize: 12, color: C.muted },
   upNextTitle: { fontSize: 14, fontWeight: "500", color: C.ink },
@@ -404,9 +417,12 @@ const styles = StyleSheet.create({
 
   // latest converted grid
   latestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  latestSlot: { width: "47%", flexGrow: 1 },
+  latestSlotDesktop: { width: "31%" },
   latestCard: {
-    width: "47%", backgroundColor: C.white, borderRadius: 14,
-    borderWidth: 0.5, borderColor: C.border, padding: 14, gap: 6,
+    backgroundColor: C.white, borderRadius: RADIUS.card,
+    padding: 15, gap: 6,
+    ...(SHADOW.card as object),
   },
   latestSource: { fontSize: 10, fontWeight: "700", color: C.teal, letterSpacing: 0.8 },
   latestTitle: { fontSize: 14, fontWeight: "700", color: C.ink, lineHeight: 19 },
@@ -423,9 +439,9 @@ const styles = StyleSheet.create({
   // newsletter pills
   nlPill: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.white, borderRadius: 100,
-    borderWidth: 0.5, borderColor: C.border,
-    paddingVertical: 6, paddingHorizontal: 12,
+    backgroundColor: C.white, borderRadius: RADIUS.pill,
+    paddingVertical: 7, paddingHorizontal: 13,
+    ...(SHADOW.card as object),
   },
   nlPillName: { fontSize: 13, fontWeight: "500", color: C.ink },
   nlAddPill: { borderStyle: "dashed" },
@@ -440,7 +456,7 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 40 },
   emptyTitle: { fontSize: 17, fontWeight: "600", color: C.ink },
   emptySub: { fontSize: 14, color: C.muted, textAlign: "center" },
-  generateBtn: { marginTop: 8, backgroundColor: C.teal, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  generateBtn: { marginTop: 8, backgroundColor: C.teal, borderRadius: RADIUS.pill, paddingVertical: 12, paddingHorizontal: 24 },
   generateBtnText: { color: C.white, fontWeight: "600" },
 
   // empty dashboard
@@ -450,22 +466,22 @@ const styles = StyleSheet.create({
     backgroundColor: C.teal, alignItems: "center", justifyContent: "center",
   },
   emptyHeroTitle: {
-    fontSize: 30, fontWeight: "800", color: C.ink,
-    textAlign: "center", letterSpacing: -0.4, lineHeight: 36,
+    fontSize: 32, fontWeight: "700", color: C.ink,
+    textAlign: "center", letterSpacing: -0.2, lineHeight: 40, fontFamily: SERIF,
   },
   emptyHeroSub: { fontSize: 14, color: C.muted, textAlign: "center", lineHeight: 20 },
 
   cards: { flexDirection: "row", gap: 12 },
-  gmailCard: { flex: 1, backgroundColor: C.ink, borderRadius: 16, padding: 16, gap: 8 },
-  discoverCard: { flex: 1, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16, gap: 8 },
+  gmailCard: { flex: 1, backgroundColor: C.ink, borderRadius: RADIUS.card, padding: 17, gap: 8, ...(SHADOW.card as object) },
+  discoverCard: { flex: 1, backgroundColor: C.white, borderRadius: RADIUS.card, padding: 17, gap: 8, ...(SHADOW.card as object) },
   cardIconLabel: { fontSize: 22, color: C.white },
   cardTitle: { fontSize: 15, fontWeight: "700", color: C.white },
   cardSub: { fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 17 },
-  gmailBtn: { backgroundColor: C.teal, borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
+  gmailBtn: { backgroundColor: C.teal, borderRadius: RADIUS.btn, paddingVertical: 11, alignItems: "center", marginTop: 4 },
   gmailBtnText: { color: C.white, fontWeight: "700", fontSize: 13 },
-  discoverBtn: { borderWidth: 1.5, borderColor: C.indigo, borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
+  discoverBtn: { borderWidth: 1.5, borderColor: C.indigo, borderRadius: RADIUS.btn, paddingVertical: 11, alignItems: "center", marginTop: 4 },
   discoverBtnText: { color: C.indigo, fontWeight: "700", fontSize: 13 },
 
   placeholderRow: { flexDirection: "row", gap: 12 },
-  placeholderCard: { flex: 1, height: 110, borderRadius: 14, backgroundColor: C.surface, borderWidth: 0.5, borderColor: C.border },
+  placeholderCard: { flex: 1, height: 110, borderRadius: RADIUS.card, backgroundColor: C.surface },
 });

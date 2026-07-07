@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     minHeight: 160,
     borderWidth: 0.5,
     borderColor: C.border,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 12,
     fontSize: 15,
     color: C.ink,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 0.5,
     borderColor: C.border,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 10,
     fontSize: 13,
     color: C.ink,
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   cta: {
     marginTop: 12,
     backgroundColor: C.teal,
-    borderRadius: 12,
+    borderRadius: 16,
     paddingVertical: 14,
     alignItems: "center",
   },
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
   player: {
     marginTop: 24,
     backgroundColor: C.surface,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
   },
   title: { fontSize: 15, fontWeight: "500", color: C.ink, textAlign: "center" },

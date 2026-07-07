@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C } from "../../lib/theme";
+import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
+import { FadeInUp, PressableScale } from "../../components/anim";
 import { scanInbox } from "../../lib/gmail";
 import { useAuth } from "../../store/authStore";
 
@@ -62,33 +63,39 @@ export default function Scan() {
   return (
     <SafeAreaView style={styles.wrap}>
       <View style={styles.center}>
-        {/* Icon */}
-        <View style={styles.iconWrap}>
-          <Text style={styles.icon}>✉</Text>
-        </View>
+        <FadeInUp style={styles.fadeCol}>
+          {/* Icon */}
+          <View style={styles.iconWrap}>
+            <Text style={styles.icon}>✉</Text>
+          </View>
 
-        {error ? (
-          <>
-            <Text style={styles.title}>Something went wrong</Text>
-            <Text style={styles.sub}>{error}</Text>
-            <Pressable style={styles.retry} onPress={() => router.replace("/(auth)/gmail")}>
-              <Text style={styles.retryText}>Reconnect Gmail</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Text style={styles.title}>Scanning your inbox</Text>
-            <View style={styles.dotsRow}>
-              {[dot1, dot2, dot3].map((d, i) => (
-                <Animated.View
-                  key={i}
-                  style={[styles.dot, { opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }]}
-                />
-              ))}
-            </View>
-            <Text style={styles.sub}>{STEPS[step]}</Text>
-          </>
-        )}
+          {error ? (
+            <>
+              <Text style={styles.title}>Something went wrong</Text>
+              <Text style={styles.sub}>{error}</Text>
+              <PressableScale
+                style={styles.retry}
+                to={0.95}
+                onPress={() => router.replace("/(auth)/gmail")}
+              >
+                <Text style={styles.retryText}>Reconnect Gmail</Text>
+              </PressableScale>
+            </>
+          ) : (
+            <>
+              <Text style={styles.title}>Scanning your inbox</Text>
+              <View style={styles.dotsRow}>
+                {[dot1, dot2, dot3].map((d, i) => (
+                  <Animated.View
+                    key={i}
+                    style={[styles.dot, { opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }]}
+                  />
+                ))}
+              </View>
+              <Text style={styles.sub}>{STEPS[step]}</Text>
+            </>
+          )}
+        </FadeInUp>
       </View>
     </SafeAreaView>
   );
@@ -97,22 +104,27 @@ export default function Scan() {
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, gap: 16 },
+  fadeCol: { alignItems: "center", gap: 16 },
 
   iconWrap: {
-    width: 72, height: 72, borderRadius: 20,
+    width: 72, height: 72, borderRadius: RADIUS.card,
     backgroundColor: C.indigo,
     alignItems: "center", justifyContent: "center",
     marginBottom: 8,
-    shadowColor: C.indigo, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+    ...(SHADOW.glow(C.indigo) as object),
   },
   icon: { fontSize: 30, color: C.white },
 
-  title: { fontSize: 22, fontWeight: "700", color: C.ink, letterSpacing: -0.3 },
+  title: { fontSize: 26, fontFamily: SERIF, fontWeight: "700", color: C.ink, letterSpacing: -0.3, textAlign: "center" },
   sub: { fontSize: 15, color: C.muted, textAlign: "center" },
 
   dotsRow: { flexDirection: "row", gap: 6, alignItems: "center" },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.indigo },
 
-  retry: { marginTop: 8, backgroundColor: C.coral, borderRadius: 100, paddingHorizontal: 24, paddingVertical: 12 },
+  retry: {
+    marginTop: 8, backgroundColor: C.coral, borderRadius: RADIUS.pill,
+    paddingHorizontal: 24, paddingVertical: 12,
+    ...(SHADOW.glow(C.coral) as object),
+  },
   retryText: { color: C.white, fontWeight: "600" },
 });

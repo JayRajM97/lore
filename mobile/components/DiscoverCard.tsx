@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { C, RADIUS } from "../lib/theme";
+import { StyleSheet, Text, View } from "react-native";
+import { C, RADIUS, SHADOW } from "../lib/theme";
+import { PressableScale } from "./anim";
 import { GlobalNewsletter } from "../lib/types";
 import Avatar from "./Avatar";
 import FrequencyBadge from "./FrequencyBadge";
@@ -27,7 +28,9 @@ export default function DiscoverCard({
 }) {
   const tile = variant === "tile";
   return (
-    <Pressable onPress={onPress} style={[styles.card, tile ? styles.tile : styles.row]}>
+    // NOTE: PressableScale puts `style` on its inner view; width 230 (tile) still
+    // sizes the outer Pressable since Pressable hugs content.
+    <PressableScale onPress={onPress} style={[styles.card, tile ? styles.tile : styles.row]}>
       <View style={styles.header}>
         <Avatar name={newsletter.sender_name} url={newsletter.logo_url} size={48} />
         <View style={styles.meta}>
@@ -47,7 +50,7 @@ export default function DiscoverCard({
           label={followLabel}
         />
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -55,10 +58,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: C.white,
     borderRadius: RADIUS.card,
-    borderWidth: 0.5,
-    borderColor: C.border,
     padding: 14,
     gap: 14,
+    ...(SHADOW.card as object),
   },
   tile: { width: 230, marginRight: 12 },
   row: {},

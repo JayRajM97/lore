@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { C } from "../lib/theme";
+import { C, SERIF } from "../lib/theme";
 
 /** Titled horizontal-scroll section used by the Discover screen. */
 export default function SectionRow({
@@ -26,6 +26,12 @@ export default function SectionRow({
 
 const styles = StyleSheet.create({
   section: { gap: 12 },
-  title: { fontSize: 17, fontWeight: "600", color: C.ink, paddingHorizontal: 16 },
+  title: {
+    fontSize: 20,
+    fontWeight: "600",
+    fontFamily: SERIF,
+    color: C.ink,
+    paddingHorizontal: 16,
+  },
   rowContent: { paddingHorizontal: 16, paddingRight: 4 },
 });
