@@ -16,6 +16,7 @@ import { getEpisodes, getFollows } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { usePlayer } from "../../store/playerStore";
 import Avatar from "../../components/Avatar";
+import CoverArt from "../../components/CoverArt";
 import { FadeInUp, PressableScale } from "../../components/anim";
 import { useIsDesktop, CONTENT } from "../../lib/responsive";
 
@@ -24,6 +25,8 @@ const MAX_W = 720;
 export default function Home() {
   const router = useRouter();
   const desktop = useIsDesktop();
+  const coverSize = desktop ? 190 : 156;
+  const showSize = desktop ? 150 : 126;
   const user = useAuth((s) => s.user);
   const accessToken = useAuth((s) => s.accessToken);
   const play = usePlayer((s) => s.play);
@@ -201,16 +204,15 @@ export default function Home() {
                 {upNext.map((ep, i) => (
                   <FadeInUp key={ep.id} delay={i * 70}>
                     <PressableScale style={styles.upNextRow} onPress={() => openPlayer(ep)}>
-                      <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
-                      <View style={{ flex: 1, gap: 2 }}>
+                      <CoverArt name={ep.sender_name} url={ep.sender_logo_url} size={66} radius={RADIUS.chip} />
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text style={styles.upNextTitle} numberOfLines={2}>{ep.subject}</Text>
                         <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
-                        <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
-                        <Text style={styles.upNextDate}>{episodeDate(ep.received_at)}</Text>
+                        <Text style={styles.upNextDate}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
                       </View>
-                      <View style={styles.readyTag}>
-                        <Text style={styles.readyTagText}>READY</Text>
+                      <View style={styles.upNextPlay}>
+                        <Text style={styles.upNextPlayIcon}>▶</Text>
                       </View>
-                      <Text style={styles.upNextDur}>{humanDuration(ep.audio_duration_s)}</Text>
                     </PressableScale>
                   </FadeInUp>
                 ))}
@@ -227,48 +229,48 @@ export default function Home() {
                   <Text style={styles.viewAll}>View All</Text>
                 </Pressable>
               </View>
-              <View style={styles.latestGrid}>
-                {latest.slice(0, 6).map((ep, i) => (
-                  <FadeInUp key={ep.id} delay={i * 60} style={[styles.latestSlot, desktop && styles.latestSlotDesktop]}>
-                    <PressableScale style={styles.latestCard} onPress={() => openPlayer(ep)}>
-                      <Text style={styles.latestSource} numberOfLines={1}>
-                        {ep.sender_name.toUpperCase()}
-                      </Text>
-                      <Text style={styles.latestTitle} numberOfLines={3}>{ep.subject}</Text>
-                      {ep.raw_text && (
-                        <Text style={styles.latestPreview} numberOfLines={2}>
-                          {ep.raw_text.slice(0, 80)}…
-                        </Text>
-                      )}
-                      <View style={styles.latestMeta}>
-                        <Text style={styles.latestDur}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
-                        <View style={styles.latestPlayBtn}>
-                          <Text style={styles.latestPlayIcon}>▶</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelf}>
+                {latest.slice(0, 10).map((ep, i) => (
+                  <FadeInUp key={ep.id} delay={i * 60}>
+                    <PressableScale style={[styles.coverCard, { width: coverSize }]} onPress={() => openPlayer(ep)}>
+                      <View>
+                        <CoverArt name={ep.sender_name} url={ep.sender_logo_url} size={coverSize} radius={RADIUS.card} />
+                        <View style={styles.coverPlay}>
+                          <Text style={styles.coverPlayIcon}>▶</Text>
                         </View>
                       </View>
+                      <Text style={styles.coverTitle} numberOfLines={2}>{ep.subject}</Text>
+                      <Text style={styles.coverMeta} numberOfLines={1}>
+                        {episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}
+                      </Text>
                     </PressableScale>
                   </FadeInUp>
                 ))}
-              </View>
+              </ScrollView>
             </View>
           )}
 
-          {/* My Newsletters row */}
+          {/* My Newsletters shelf */}
           {follows.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionHeading}>My Newsletters</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                {follows.map((nl) => (
-                  <Pressable key={nl.id} style={styles.nlPill}
-                    onPress={() => router.push(`/newsletter/${encodeURIComponent(nl.id)}`)}>
-                    <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={32} />
-                    <Text style={styles.nlPillName} numberOfLines={1}>{nl.sender_name}</Text>
-                  </Pressable>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shelf}>
+                {follows.map((nl, i) => (
+                  <FadeInUp key={nl.id} delay={Math.min(i, 8) * 50}>
+                    <PressableScale style={[styles.showCard, { width: showSize }]}
+                      onPress={() => router.push(`/newsletter/${encodeURIComponent(nl.id)}`)}>
+                      <CoverArt name={nl.sender_name} url={nl.sender_logo_url} size={showSize} radius={RADIUS.card} />
+                      <Text style={styles.showName} numberOfLines={2}>{nl.sender_name}</Text>
+                      <Text style={styles.showMeta} numberOfLines={1}>{nl.frequency}</Text>
+                    </PressableScale>
+                  </FadeInUp>
                 ))}
-                <Pressable style={[styles.nlPill, styles.nlAddPill]} onPress={() => router.push("/(auth)/scan")}>
-                  <View style={styles.nlAddCircle}><Text style={styles.nlAddPlus}>+</Text></View>
-                  <Text style={styles.nlPillName}>Add more</Text>
-                </Pressable>
+                <PressableScale style={[styles.showCard, { width: showSize }]} onPress={() => router.push("/(auth)/scan")}>
+                  <View style={[styles.addArt, { width: showSize, height: showSize }]}>
+                    <Text style={styles.addPlus}>+</Text>
+                  </View>
+                  <Text style={styles.showName}>Add more</Text>
+                </PressableScale>
               </ScrollView>
             </View>
           )}
@@ -400,41 +402,49 @@ const styles = StyleSheet.create({
   playNowIcon: { color: C.white, fontSize: 14 },
   playNowText: { color: C.white, fontWeight: "700", fontSize: 15 },
 
-  // up next
+  // horizontal shelves (Latest Converted + My Newsletters)
+  shelf: { gap: 14, paddingRight: 8, paddingVertical: 2 },
+
+  // up next — episode rows with big art + play
   upNextList: { gap: 10 },
   upNextRow: {
-    flexDirection: "row", alignItems: "center", gap: 10,
+    flexDirection: "row", alignItems: "center", gap: 12,
     backgroundColor: C.white, borderRadius: RADIUS.card,
-    padding: 13,
+    padding: 12,
     ...(SHADOW.card as object),
   },
   upNextSender: { fontSize: 12, color: C.muted },
-  upNextTitle: { fontSize: 14, fontWeight: "500", color: C.ink },
-  upNextDate: { fontSize: 11, color: C.muted },
-  readyTag: { backgroundColor: C.teal50, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  readyTagText: { fontSize: 9, fontWeight: "700", color: C.teal, letterSpacing: 0.5 },
-  upNextDur: { fontSize: 12, color: C.muted },
-
-  // latest converted grid
-  latestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  latestSlot: { width: "47%", flexGrow: 1 },
-  latestSlotDesktop: { width: "31%" },
-  latestCard: {
-    backgroundColor: C.white, borderRadius: RADIUS.card,
-    padding: 15, gap: 6,
-    ...(SHADOW.card as object),
+  upNextTitle: { fontSize: 14.5, fontWeight: "700", color: C.ink, lineHeight: 19 },
+  upNextDate: { fontSize: 11.5, color: C.muted },
+  upNextPlay: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: C.teal,
+    alignItems: "center", justifyContent: "center",
+    ...(SHADOW.glow(C.teal) as object),
   },
-  latestSource: { fontSize: 10, fontWeight: "700", color: C.teal, letterSpacing: 0.8 },
-  latestTitle: { fontSize: 14, fontWeight: "700", color: C.ink, lineHeight: 19 },
-  latestPreview: { fontSize: 12, color: C.muted, lineHeight: 16 },
-  latestMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
-  latestDur: { fontSize: 12, color: C.muted },
-  latestPlayBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    borderWidth: 1.5, borderColor: C.teal,
+  upNextPlayIcon: { color: C.white, fontSize: 13, marginLeft: 2 },
+
+  // latest converted — big cover-art tiles
+  coverCard: { gap: 8 },
+  coverPlay: {
+    position: "absolute", right: 8, bottom: 8,
+    width: 42, height: 42, borderRadius: 21, backgroundColor: C.teal,
+    alignItems: "center", justifyContent: "center",
+    ...(SHADOW.glow(C.teal) as object),
+  },
+  coverPlayIcon: { color: C.white, fontSize: 14, marginLeft: 2 },
+  coverTitle: { fontSize: 14, fontWeight: "700", color: C.ink, lineHeight: 18 },
+  coverMeta: { fontSize: 12, color: C.muted },
+
+  // my newsletters — show tiles
+  showCard: { gap: 8 },
+  showName: { fontSize: 14, fontWeight: "700", color: C.ink, lineHeight: 18 },
+  showMeta: { fontSize: 12, color: C.muted },
+  addArt: {
+    borderRadius: RADIUS.card, backgroundColor: C.surface,
+    borderWidth: 1.5, borderColor: C.border, borderStyle: "dashed",
     alignItems: "center", justifyContent: "center",
   },
-  latestPlayIcon: { fontSize: 10, color: C.teal, marginLeft: 1 },
+  addPlus: { fontSize: 34, color: C.muted, fontWeight: "300" },
 
   // newsletter pills
   nlPill: {
