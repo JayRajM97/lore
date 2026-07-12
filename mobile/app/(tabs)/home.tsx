@@ -231,15 +231,17 @@ export default function Home() {
                 {latest.slice(0, 6).map((ep, i) => (
                   <FadeInUp key={ep.id} delay={i * 60} style={[styles.latestSlot, desktop && styles.latestSlotDesktop]}>
                     <PressableScale style={styles.latestCard} onPress={() => openPlayer(ep)}>
-                      <Text style={styles.latestSource} numberOfLines={1}>
-                        {ep.sender_name.toUpperCase()}
-                      </Text>
-                      <Text style={styles.latestTitle} numberOfLines={3}>{ep.subject}</Text>
-                      {ep.raw_text && (
-                        <Text style={styles.latestPreview} numberOfLines={2}>
-                          {ep.raw_text.slice(0, 80)}…
+                      <View style={styles.latestTop}>
+                        <Text style={styles.latestSource} numberOfLines={1}>
+                          {ep.sender_name.toUpperCase()}
                         </Text>
-                      )}
+                        <Text style={styles.latestTitle} numberOfLines={2}>{ep.subject}</Text>
+                        {ep.raw_text && (
+                          <Text style={styles.latestPreview} numberOfLines={2}>
+                            {ep.raw_text.slice(0, 80)}…
+                          </Text>
+                        )}
+                      </View>
                       <View style={styles.latestMeta}>
                         <Text style={styles.latestDur}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
                         <View style={styles.latestPlayBtn}>
@@ -421,13 +423,14 @@ const styles = StyleSheet.create({
   latestSlotDesktop: { width: "31%" },
   latestCard: {
     backgroundColor: C.white, borderRadius: RADIUS.card,
-    padding: 15, gap: 6,
+    padding: 15, height: 188, justifyContent: "space-between",
     ...(SHADOW.card as object),
   },
-  latestSource: { fontSize: 10, fontWeight: "700", color: C.teal, letterSpacing: 0.8 },
+  latestTop: { gap: 6 },
+  latestSource: { fontSize: 10, fontWeight: "700", color: C.teal, letterSpacing: 0.8, lineHeight: 14 },
   latestTitle: { fontSize: 14, fontWeight: "700", color: C.ink, lineHeight: 19 },
   latestPreview: { fontSize: 12, color: C.muted, lineHeight: 16 },
-  latestMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  latestMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   latestDur: { fontSize: 12, color: C.muted },
   latestPlayBtn: {
     width: 32, height: 32, borderRadius: 16,
