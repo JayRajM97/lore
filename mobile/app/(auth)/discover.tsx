@@ -20,11 +20,32 @@ import { Newsletter } from "../../lib/types";
 import { fetchRecentEmails, FetchedEmail } from "../../lib/gmail";
 import { relativeDate, episodeDate } from "../../lib/format";
 import Avatar from "../../components/Avatar";
+import NewsletterReader from "../../components/NewsletterReader";
+import { Episode } from "../../lib/types";
 import { FadeInUp, PressableScale } from "../../components/anim";
 
 const MAX_W = 680;
 const SCREEN_H = Dimensions.get("window").height;
 const SHEET_H = Math.min(SCREEN_H * 0.82, 680);
+
+// Adapt a fetched email into the Episode shape the rich reader expects, so the
+// scan-flow preview and the player use the exact same reader (blocks + images +
+// "View original"). gmail_message_id = the message id, enabling View original.
+function emailToEpisode(email: FetchedEmail, nl: Newsletter): Episode {
+  return {
+    id: email.id,
+    newsletter_id: "",
+    sender_name: nl.sender_name,
+    sender_logo_url: nl.sender_logo_url,
+    subject: email.subject,
+    raw_text: email.text,
+    blocks: email.blocks,
+    gmail_message_id: email.id,
+    audio_url: "",
+    audio_duration_s: 0,
+    received_at: email.date,
+  };
+}
 
 // ─── Detail sheet ────────────────────────────────────────────────────────────
 
@@ -182,32 +203,16 @@ function DetailSheet({ nl, selected, onToggleFollow, onClose, token }: SheetProp
           </PressableScale>
         </View>
 
-        {/* Full-issue reader — overlays the sheet when an issue is tapped */}
+        {/* Full-issue reader — overlays the sheet when an issue is tapped.
+            Reuses the rich reader (structured blocks + images + View original). */}
         {reading && (
           <View style={sheet.reader}>
-            <View style={sheet.readerBar}>
-              <Pressable onPress={() => setReading(null)} hitSlop={10} style={sheet.readerBack}>
-                <Text style={sheet.readerBackTxt}>‹ Back</Text>
-              </Pressable>
-              <Pressable onPress={close} style={sheet.closeBtn} hitSlop={8}>
-                <Text style={sheet.closeX}>✕</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              style={{ flex: 1 }}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={sheet.readerContent}
-            >
-              <View style={sheet.readerMeta}>
-                <Avatar name={nl.sender_name} url={nl.sender_logo_url} size={28} />
-                <Text style={sheet.readerSender}>{nl.sender_name}</Text>
-                <Text style={sheet.readerDot}>·</Text>
-                <Text style={sheet.readerDate}>{episodeDate(reading.date)}</Text>
-              </View>
-              <Text style={sheet.readerTitle}>{reading.subject}</Text>
-              <Text style={sheet.readerBody}>{reading.text.trim()}</Text>
-              <View style={{ height: 40 }} />
-            </ScrollView>
+            <NewsletterReader
+              episode={emailToEpisode(reading, nl)}
+              token={token}
+              embedded
+              onClose={() => setReading(null)}
+            />
           </View>
         )}
       </Animated.View>
@@ -528,17 +533,7 @@ const sheet = StyleSheet.create({
   readMore: { fontSize: 13, fontWeight: "600", color: C.teal },
 
   // Full-issue reader (overlays the sheet)
-  reader: { ...StyleSheet.absoluteFillObject, backgroundColor: C.bg, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl },
-  readerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
-  readerBack: { paddingVertical: 4, paddingRight: 12 },
-  readerBackTxt: { fontSize: 15, fontWeight: "700", color: C.teal },
-  readerContent: { paddingHorizontal: 22, paddingTop: 4 },
-  readerMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  readerSender: { fontSize: 13, fontWeight: "700", color: C.ink },
-  readerDot: { color: C.muted },
-  readerDate: { fontSize: 13, color: C.muted, fontWeight: "500" },
-  readerTitle: { fontSize: 24, fontWeight: "700", color: C.ink, lineHeight: 32, fontFamily: SERIF, marginBottom: 14 },
-  readerBody: { fontSize: 16, color: C.ink, lineHeight: 26 },
+  reader: { ...StyleSheet.absoluteFillObject, backgroundColor: C.bg, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, overflow: "hidden" },
 
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, borderTopWidth: 0.5, borderColor: C.border },
   followBtn: { borderRadius: RADIUS.pill, paddingVertical: 15, alignItems: "center", borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },

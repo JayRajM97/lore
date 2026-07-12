@@ -87,10 +87,12 @@ export default function NewsletterReader({
   episode,
   token,
   onClose,
+  embedded = false,
 }: {
   episode: Episode;
   token: string | null;
   onClose: () => void;
+  embedded?: boolean; // true when hosted inside a bottom sheet (skip top inset)
 }) {
   const [mode, setMode] = useState<Mode>("reader");
   const [html, setHtml] = useState<string | null>(null);
@@ -112,7 +114,7 @@ export default function NewsletterReader({
 
   return (
     <View style={s.wrap}>
-      <SafeAreaView edges={["top"]} style={{ backgroundColor: C.bg }}>
+      <SafeAreaView edges={embedded ? [] : ["top"]} style={{ backgroundColor: C.bg }}>
         <View style={s.topBar}>
           <Pressable onPress={onClose} hitSlop={10} style={s.back}>
             <Text style={s.backTxt}>‹ Back</Text>
