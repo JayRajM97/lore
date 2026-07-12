@@ -66,13 +66,17 @@ export async function saveEpisodes(userId: string, episodes: Episode[]) {
         sender_logo_url: e.sender_logo_url ?? null,
         subject: e.subject,
         raw_text: e.raw_text ?? null,
+        tts_script: e.tts_script ?? null,
+        blocks: e.blocks ?? null,
+        gmail_message_id: e.gmail_message_id ?? null,
         audio_url: e.audio_url,
         audio_duration_s: e.audio_duration_s,
         received_at: e.received_at,
         word_count: e.word_count ?? null,
         generation_time_ms: e.generation_time_ms ?? null,
         created_at: serverTimestamp(),
-        // words excluded — too large for inline doc; session-only
+        // words excluded — too large for inline doc; session-only. blocks are
+        // small (text + image URLs) so the rich reader survives reloads.
       })
     )
   );

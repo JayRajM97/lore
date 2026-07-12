@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   LayoutChangeEvent,
@@ -17,8 +17,10 @@ import { mmss, episodeDate } from "../lib/format";
 import { extractChapters, Chapter } from "../lib/lines";
 import Avatar from "../components/Avatar";
 import LyricsView from "../components/LyricsView";
+import NewsletterReader from "../components/NewsletterReader";
 import { FadeInUp } from "../components/anim";
 import { useIsDesktop, CONTENT } from "../lib/responsive";
+import { useAuth } from "../store/authStore";
 
 // Derive a dark gradient-style color from the newsletter name
 function artBg(name: string): string {
@@ -122,8 +124,14 @@ export default function Player() {
   }
 
   const desktop = useIsDesktop();
+  const token = useAuth((s) => s.accessToken);
+  const [readerOpen, setReaderOpen] = useState(false);
 
   if (!ep) return <Redirect href="/home" />;
+
+  if (readerOpen) {
+    return <NewsletterReader episode={ep} token={token} onClose={() => setReaderOpen(false)} />;
+  }
 
   if (lyricsOpen) {
     return (
@@ -156,8 +164,8 @@ export default function Player() {
           <View style={s.topCenter}>
             <Text style={s.modeLabel}>NOW PLAYING</Text>
           </View>
-          <Pressable style={s.iconCircle} onPress={toggleLyrics} hitSlop={8}>
-            <Text style={s.ccTop}>CC</Text>
+          <Pressable style={s.iconCircle} onPress={() => setReaderOpen(true)} hitSlop={8}>
+            <Text style={s.ccTop}>Aa</Text>
           </Pressable>
         </View>
       </SafeAreaView>

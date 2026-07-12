@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
+  Image,
   PanResponder,
   Pressable,
   ScrollView,
@@ -237,10 +238,28 @@ function PlayButton({ isPlaying, onPress }: { isPlaying: boolean; onPress: () =>
   );
 }
 
+// Inline newsletter image shown between lyric lines, self-sizing to its ratio.
+function LyricImage({ src }: { src: string }) {
+  const [ratio, setRatio] = useState(1.6);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    Image.getSize(src, (w, h) => { if (live && h > 0) setRatio(w / h); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [src]);
+  if (failed) return <View style={{ height: 8 }} />;
+  return (
+    <View style={s.lyricImgWrap}>
+      <Image source={{ uri: src }} style={{ width: "100%", aspectRatio: ratio }} resizeMode="cover" />
+    </View>
+  );
+}
+
 function Line({ line, state, onTap }: { line: ScriptLine; state: "active" | "past" | "next"; onTap: () => void }) {
   if (line.kind === "pause") return <View style={{ height: 12 }} />;
 
   if (line.kind === "image") {
+    if (line.imageSrc) return <LyricImage src={line.imageSrc} />;
     return (
       <View style={s.imgChip}>
         <Text style={s.imgChipTxt}>📷 {line.text || "Image"}</Text>
@@ -328,6 +347,10 @@ const s = StyleSheet.create({
     alignSelf: "flex-start", marginVertical: 10,
   },
   imgChipTxt: { color: P.muted, fontSize: 12 },
+  lyricImgWrap: {
+    marginVertical: 16, borderRadius: RADIUS.card, overflow: "hidden",
+    backgroundColor: P.surface,
+  },
 
   bottomBar: {
     borderTopWidth: 0.5, borderTopColor: P.border,

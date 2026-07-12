@@ -17,6 +17,7 @@ export interface ScriptLine {
   start_time: number;
   end_time: number;
   tappable: boolean;
+  imageSrc?: string; // for image lines parsed from [image: <url>] markers
 }
 
 const PAUSE_S = 0.5; // silence allocated to a [pause] / image chip
@@ -78,6 +79,7 @@ function splitSentence(sentence: string): string[] {
 interface RawLine {
   text: string;
   kind: LineKind;
+  imageSrc?: string;
 }
 
 function splitIntoLines(text: string): RawLine[] {
@@ -90,7 +92,13 @@ function splitIntoLines(text: string): RawLine[] {
       if (!p) continue;
       const img = p.match(/\[image:?\s*([^\]]*)\]/i);
       if (img) {
-        out.push({ text: (img[1] || "visual content").trim(), kind: "image" });
+        const val = (img[1] || "").trim();
+        const isUrl = /^https?:\/\//i.test(val);
+        out.push({
+          text: isUrl ? "" : (val || "visual content"),
+          kind: "image",
+          imageSrc: isUrl ? val : undefined,
+        });
         continue;
       }
       if (isHeader(p)) {
@@ -136,6 +144,7 @@ export function buildLines(
       start_time: t,
       end_time: t + dur,
       tappable: l.kind === "normal",
+      imageSrc: l.imageSrc,
     };
     t += dur;
     return line;

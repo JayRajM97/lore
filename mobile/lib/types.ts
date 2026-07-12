@@ -2,6 +2,16 @@
 
 export type Frequency = "Daily" | "Weekly" | "Monthly";
 
+// Ordered structured content parsed from a newsletter's HTML. This is the
+// single source of truth for both the narration script (spoken text, in order)
+// and the rich reader (headings/paragraphs/images/quotes shown inline), which
+// is what keeps the word-sync highlight aligned with what's on screen.
+export type ContentBlock =
+  | { type: "heading"; text: string }
+  | { type: "text"; text: string }
+  | { type: "quote"; text: string }
+  | { type: "image"; src: string; alt?: string };
+
 export interface Newsletter {
   id: string;
   sender_email: string;
@@ -20,7 +30,9 @@ export interface Episode {
   sender_logo_url?: string | null;
   subject: string;
   raw_text?: string;
-  tts_script?: string;
+  tts_script?: string;       // display script (spoken text + [image: url] markers) for lyrics
+  blocks?: ContentBlock[];   // structured content for the rich reader
+  gmail_message_id?: string; // for re-fetching the original HTML ("View original")
   audio_url: string;
   audio_duration_s: number;
   received_at: string; // ISO

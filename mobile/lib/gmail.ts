@@ -1,4 +1,5 @@
-import { Newsletter, Frequency } from "./types";
+import { Newsletter, Frequency, ContentBlock } from "./types";
+import { buildContent } from "./blocks";
 
 // ── email body extraction ──────────────────────────────────────────────────
 
@@ -162,10 +163,22 @@ export async function fetchLatestEmail(
 }
 
 export interface FetchedEmail {
-  id: string;     // stable Gmail message id — used to dedup episodes
+  id: string;     // stable Gmail message id — used to dedup episodes + refetch HTML
   subject: string;
-  text: string;
+  text: string;             // spoken prose sent to TTS
+  displayScript: string;    // spoken prose + [image: src] markers, for the lyrics view
+  blocks: ContentBlock[];   // structured content for the rich reader
   date: string;   // ISO string of when the email arrived
+}
+
+/** Re-fetch a message's raw HTML on demand (for the "View original" mode). */
+export async function fetchRawHtml(messageId: string, token: string): Promise<string | null> {
+  try {
+    const msg = await getJson(`${GMAIL}/messages/${messageId}?format=full`, token);
+    return findPart(msg.payload, "text/html");
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -200,12 +213,30 @@ export async function fetchRecentEmails(
           : new Date().toISOString();
         const plainRaw = findPart(msg.payload, "text/plain");
         const htmlRaw = findPart(msg.payload, "text/html");
+
+        // Structured path: parse HTML once into ordered blocks, and derive the
+        // spoken text + display script from that same model so audio and the
+        // on-screen reader stay in lockstep.
+        const content = htmlRaw ? buildContent(htmlRaw) : null;
         const plain = plainRaw ? cutFooter(cleanProse(plainRaw)) : "";
-        const fromHtml = htmlRaw ? cutFooter(cleanProse(stripHtml(htmlRaw))) : "";
-        const text = fromHtml.length > plain.length ? fromHtml : plain;
+
+        // Prefer the structured spoken text; fall back to text/plain when the
+        // HTML yielded little (rare link-only newsletters).
+        let text: string;
+        let displayScript: string;
+        let blocks: ContentBlock[];
+        if (content && content.spokenText.length >= plain.length) {
+          text = content.spokenText;
+          displayScript = content.displayScript;
+          blocks = content.blocks;
+        } else {
+          const trimmed = plain.split(/\s+/).filter(Boolean).slice(0, 2500).join(" ");
+          text = trimmed;
+          displayScript = trimmed;
+          blocks = trimmed ? [{ type: "text", text: trimmed }] : [];
+        }
         if (!text || text.trim().length < 50) return null;
-        const trimmed = text.split(/\s+/).filter(Boolean).slice(0, 2500).join(" ");
-        return { id, subject, text: trimmed, date };
+        return { id, subject, text, displayScript, blocks, date };
       } catch {
         return null;
       }
