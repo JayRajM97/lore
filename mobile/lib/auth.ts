@@ -1,22 +1,44 @@
 // v6 has no exports map; the providers live under build/.
 import * as Google from "expo-auth-session/build/providers/Google";
+import { ResponseType, makeRedirectUri } from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
 import { GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, GOOGLE_SCOPES } from "./config";
 import { GoogleUser } from "../store/authStore";
 
 // Required so the auth popup can hand control back to the app.
 WebBrowser.maybeCompleteAuthSession();
 
-// Hook: returns [request, response, promptAsync]. The Google provider uses the
-// implicit flow → response.authentication.accessToken (valid ~1h, enough for an
-// on-device inbox scan). NOTE: real Google OAuth needs a DEV BUILD
-// (`npx expo run:ios`), not Expo Go — Expo Go can't honor the iOS redirect.
+// Must EXACTLY match an authorized redirect URI on the Google web client
+// (https://lore-app-lake.vercel.app in prod, http://localhost:8081 in dev).
+export const WEB_REDIRECT_URI =
+  Platform.OS === "web" && typeof window !== "undefined"
+    ? window.location.origin
+    : makeRedirectUri();
+
+// Web: AUTHORIZATION-CODE flow. The code is exchanged by the sidecar (which
+// holds the client secret) for an access token + a long-lived REFRESH token,
+// so after the first consent the user never sees a Google popup again —
+// "Sync" silently mints fresh tokens server-side.
+// access_type=offline + prompt=consent is what makes Google issue the refresh
+// token. Native keeps the implicit flow until the dev-build work lands.
 export function useGoogleAuth() {
-  return Google.useAuthRequest({
-    iosClientId: GOOGLE_IOS_CLIENT_ID,
-    webClientId: GOOGLE_WEB_CLIENT_ID,
-    scopes: GOOGLE_SCOPES,
-  });
+  return Google.useAuthRequest(
+    Platform.OS === "web"
+      ? {
+          webClientId: GOOGLE_WEB_CLIENT_ID,
+          scopes: GOOGLE_SCOPES,
+          responseType: ResponseType.Code,
+          shouldAutoExchangeCode: false,
+          redirectUri: WEB_REDIRECT_URI,
+          extraParams: { access_type: "offline", prompt: "consent" },
+        }
+      : {
+          iosClientId: GOOGLE_IOS_CLIENT_ID,
+          webClientId: GOOGLE_WEB_CLIENT_ID,
+          scopes: GOOGLE_SCOPES,
+        }
+  );
 }
 
 // Resolve the signed-in user's identity from an access token.

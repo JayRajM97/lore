@@ -65,6 +65,19 @@ SERVICE_ACCOUNT_PATH = os.environ.get(
 )
 STORAGE_BUCKET = "lore-10132.firebasestorage.app"
 
+# ── Google OAuth (refresh-token sync) ────────────────────────────────────────
+# The web client's secret lives ONLY here (server-side). The mobile/web client
+# sends its one-time auth code; we exchange it, keep the refresh token in
+# Firestore (gmail_tokens/{sub}, Admin-SDK only), and mint fresh access tokens
+# on demand so users never re-consent after the first connect.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get(
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "331040043777-k2fl6kmhe241v6luslejee8lfvcptg2i.apps.googleusercontent.com",
+)
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
 # ── ElevenLabs config ────────────────────────────────────────────────────────
 # Set ELEVENLABS_API_KEY to use the cloud API instead of local Kokoro.
 # The key needs only the text-to-speech permission.
@@ -620,6 +633,113 @@ def play(req: PlayRequest):
         {"play_count": fb_firestore.Increment(1)}
     )
     return JSONResponse({"ok": True})
+
+
+# ── Google OAuth: one-time exchange + silent refresh ─────────────────────────
+def _google_token_call(form: Dict[str, str]) -> dict:
+    body = urllib.parse.urlencode(form).encode()
+    req = urllib.request.Request(
+        GOOGLE_TOKEN_URL,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="ignore")[:300]
+        raise HTTPException(status_code=e.code, detail=f"Google token endpoint: {detail}")
+
+
+class ExchangeRequest(BaseModel):
+    code: str
+    redirect_uri: str
+    code_verifier: str | None = None
+
+
+@app.post("/auth/google/exchange")
+def google_exchange(req: ExchangeRequest):
+    """Exchange an auth code for tokens; store the refresh token server-side."""
+    if not GOOGLE_OAUTH_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="GOOGLE_OAUTH_CLIENT_SECRET not configured")
+    form = {
+        "code": req.code,
+        "client_id": GOOGLE_OAUTH_CLIENT_ID,
+        "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "redirect_uri": req.redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    if req.code_verifier:
+        form["code_verifier"] = req.code_verifier
+    tokens = _google_token_call(form)
+    access_token = tokens.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=502, detail="No access_token from Google")
+
+    # Identify the user with the fresh token (sub is the stable Google id).
+    ureq = urllib.request.Request(
+        GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
+    )
+    with urllib.request.urlopen(ureq, timeout=30) as resp:
+        info = json.loads(resp.read())
+
+    refresh_token = tokens.get("refresh_token")
+    if refresh_token and FIRESTORE is not None:
+        FIRESTORE.collection("gmail_tokens").document(info["sub"]).set({
+            "refresh_token": refresh_token,
+            "email": info.get("email"),
+            "updated_at": fb_firestore.SERVER_TIMESTAMP,
+        })
+        print(f"[lore] stored refresh token for {info.get('email')}", flush=True)
+
+    return JSONResponse({
+        "access_token": access_token,
+        "expires_in": tokens.get("expires_in", 3600),
+        "id_token": tokens.get("id_token"),
+        "has_refresh": bool(refresh_token),
+        "user": {
+            "sub": info["sub"],
+            "email": info.get("email"),
+            "name": info.get("name") or info.get("email"),
+            "picture": info.get("picture"),
+        },
+    })
+
+
+class SilentTokenRequest(BaseModel):
+    uid: str
+
+
+@app.post("/auth/google/token")
+def google_silent_token(req: SilentTokenRequest):
+    """Mint a fresh access token from the stored refresh token — no user prompt."""
+    if not GOOGLE_OAUTH_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="GOOGLE_OAUTH_CLIENT_SECRET not configured")
+    _require_firestore()
+    snap = FIRESTORE.collection("gmail_tokens").document(req.uid).get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="No refresh token on file")
+    refresh_token = (snap.to_dict() or {}).get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=404, detail="No refresh token on file")
+    try:
+        tokens = _google_token_call({
+            "client_id": GOOGLE_OAUTH_CLIENT_ID,
+            "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        })
+    except HTTPException as e:
+        # invalid_grant → user revoked access; clear so the client re-consents.
+        if e.status_code == 400:
+            FIRESTORE.collection("gmail_tokens").document(req.uid).delete()
+            raise HTTPException(status_code=401, detail="Refresh token revoked — reconnect Gmail")
+        raise
+    return JSONResponse({
+        "access_token": tokens.get("access_token"),
+        "expires_in": tokens.get("expires_in", 3600),
+    })
 
 
 def _range_response(path: str, range_header: str | None) -> Response:

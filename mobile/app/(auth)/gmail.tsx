@@ -4,7 +4,9 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { FadeInUp, PressableScale } from "../../components/anim";
-import { useGoogleAuth, fetchGoogleUser } from "../../lib/auth";
+import { Platform } from "react-native";
+import { useGoogleAuth, fetchGoogleUser, WEB_REDIRECT_URI } from "../../lib/auth";
+import { exchangeCode } from "../../lib/tokens";
 import { useAuth } from "../../store/authStore";
 import { signIntoFirebase } from "../../lib/firebaseAuth";
 
@@ -23,22 +25,32 @@ export default function GmailConnect() {
 
   useEffect(() => {
     if (response?.type === "success") {
-      const token = response.authentication?.accessToken;
-      const idToken = response.authentication?.idToken;
-      if (!token) {
-        setError("No access token returned.");
-        setBusy(false);
-        return;
-      }
-      Promise.all([signIntoFirebase(idToken, token), fetchGoogleUser(token)])
-        .then(([, user]) => {
+      const finish = async () => {
+        if (Platform.OS === "web") {
+          // Code flow: sidecar exchanges the code, stores the refresh token,
+          // and returns access token + identity. One consent, then silent sync.
+          const code = (response as any).params?.code;
+          if (!code) throw new Error("No auth code returned");
+          const r = await exchangeCode(code, WEB_REDIRECT_URI, request?.codeVerifier ?? undefined);
+          await signIntoFirebase(r.idToken ?? undefined, r.accessToken).catch(() => {});
+          setSession(r.user, r.accessToken);
+        } else {
+          // Native: implicit flow (until the dev-build auth work lands).
+          const token = response.authentication?.accessToken;
+          const idToken = response.authentication?.idToken;
+          if (!token) throw new Error("No access token returned");
+          const [, user] = await Promise.all([
+            signIntoFirebase(idToken, token).catch(() => {}),
+            fetchGoogleUser(token),
+          ]);
           setSession(user, token);
-          router.replace("/(auth)/scan");
-        })
-        .catch(() => {
-          setError("Couldn't read your Google profile.");
-          setBusy(false);
-        });
+        }
+        router.replace("/(auth)/scan");
+      };
+      finish().catch(() => {
+        setError("Couldn't connect Gmail. Try again.");
+        setBusy(false);
+      });
     } else if (response?.type === "error" || response?.type === "dismiss") {
       setError(response.type === "error" ? "Couldn't connect Gmail. Try again." : null);
       setBusy(false);

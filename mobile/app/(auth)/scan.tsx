@@ -6,6 +6,7 @@ import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { FadeInUp, PressableScale } from "../../components/anim";
 import { scanInbox } from "../../lib/gmail";
 import { useAuth } from "../../store/authStore";
+import { ensureAccessToken } from "../../lib/tokens";
 
 const STEPS = [
   "Checking the last 30 days",
@@ -25,7 +26,11 @@ export default function Scan() {
 
   useEffect(() => {
     if (!accessToken) {
-      router.replace("/(auth)/gmail");
+      // Try a silent server-side refresh before demanding a re-consent.
+      ensureAccessToken().then((t) => {
+        if (!t) router.replace("/(auth)/gmail");
+        // if a token arrived, the store update re-runs this effect with it
+      });
       return;
     }
 

@@ -18,6 +18,7 @@ import { usePlayer } from "../../store/playerStore";
 import Avatar from "../../components/Avatar";
 import { FadeInUp, PressableScale } from "../../components/anim";
 import { useIsDesktop, CONTENT } from "../../lib/responsive";
+import { ensureAccessToken } from "../../lib/tokens";
 
 const MAX_W = 720;
 
@@ -56,6 +57,13 @@ export default function Home() {
     load();
   }, [user]);
 
+  // Self-heal an expired session: silently mint a fresh access token from the
+  // server-stored refresh token so the "Reconnect Gmail" banner never shows
+  // for users who connected once. (No-op if there's no stored refresh token.)
+  useEffect(() => {
+    if (user && !accessToken) ensureAccessToken().catch(() => {});
+  }, [user, accessToken]);
+
   function openPlayer(ep: Episode) {
     play(ep);
     router.push("/player");
@@ -63,9 +71,12 @@ export default function Home() {
 
   async function syncLatest() {
     if (syncing) return;
-    if (!accessToken) { router.push("/(auth)/gmail"); return; }
     setSyncing(true);
     try {
+      // Silent-first: reuse the live token or mint one from the server-stored
+      // refresh token. Only a brand-new / revoked user sees the consent screen.
+      const token = await ensureAccessToken();
+      if (!token) { router.push("/(auth)/gmail"); return; }
       const fol = user ? await getFollows(user.sub).catch(() => [] as Newsletter[]) : [];
       if (!fol.length) { router.push("/(auth)/scan"); return; }
       (globalThis as any).__lore_generating = fol;
