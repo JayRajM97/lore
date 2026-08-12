@@ -20,6 +20,10 @@ import { FadeInUp, PressableScale } from "../../components/anim";
 import { useIsDesktop, CONTENT } from "../../lib/responsive";
 import { ensureAccessToken } from "../../lib/tokens";
 import { fetchTrendingEpisodes } from "../../lib/discovery";
+import { getPref, setPref } from "../../lib/prefs";
+import { withProgress, listenedOf } from "../../lib/progress";
+import ViewToggle, { ViewMode } from "../../components/ViewToggle";
+import EpisodeTile from "../../components/EpisodeTile";
 
 const MAX_W = 720;
 
@@ -36,6 +40,14 @@ export default function Home() {
   const [showReadyBanner, setShowReadyBanner] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [globalEps, setGlobalEps] = useState<Episode[] | null>(null);
+  const [upNextView, setUpNextView] = useState<ViewMode>(
+    () => (getPref("view_upnext", "cards") as ViewMode)
+  );
+
+  function changeUpNextView(v: ViewMode) {
+    setUpNextView(v);
+    setPref("view_upnext", v);
+  }
 
   // Catalog-first onboarding: signed-out visitors browse and play the global
   // feed of already-converted newsletters — no Gmail required.
@@ -55,7 +67,7 @@ export default function Home() {
       const sessionEps: Episode[] = (globalThis as any).__lore_episodes ?? [];
       const inFirestore = new Set(firestoreEps.map((e) => e.id));
       const sessionOnly = sessionEps.filter((e) => !inFirestore.has(e.id));
-      setEpisodes([...firestoreEps, ...sessionOnly]);
+      setEpisodes(withProgress([...firestoreEps, ...sessionOnly]));
       setFollows(fol);
       setLoaded(true);
       if ((globalThis as any).__lore_just_generated) {
@@ -256,33 +268,46 @@ export default function Home() {
             </FadeInUp>
           )}
 
-          {/* Up Next row */}
+          {/* Up Next — cards by default, list on toggle */}
           {upNext.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionRow}>
                 <Text style={styles.sectionHeading}>Up Next</Text>
-                <Pressable onPress={() => router.push("/library")}>
-                  <Text style={styles.viewAll}>View All</Text>
-                </Pressable>
+                <View style={styles.sectionTools}>
+                  <ViewToggle value={upNextView} onChange={changeUpNextView} />
+                  <Pressable onPress={() => router.push("/library")}>
+                    <Text style={styles.viewAll}>View All</Text>
+                  </Pressable>
+                </View>
               </View>
-              <View style={styles.upNextList}>
-                {upNext.map((ep, i) => (
-                  <FadeInUp key={ep.id} delay={i * 70}>
-                    <PressableScale style={styles.upNextRow} onPress={() => openPlayer(ep)}>
-                      <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
-                        <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
-                        <Text style={styles.upNextDate}>{episodeDate(ep.received_at)}</Text>
-                      </View>
-                      <View style={styles.readyTag}>
-                        <Text style={styles.readyTagText}>READY</Text>
-                      </View>
-                      <Text style={styles.upNextDur}>{humanDuration(ep.audio_duration_s)}</Text>
-                    </PressableScale>
-                  </FadeInUp>
-                ))}
-              </View>
+              {upNextView === "cards" ? (
+                <View style={styles.tileGrid}>
+                  {upNext.map((ep, i) => (
+                    <FadeInUp key={ep.id} delay={i * 60} style={[styles.tileSlot, desktop && styles.tileSlotDesktop]}>
+                      <EpisodeTile episode={ep} onPress={() => openPlayer(ep)} />
+                    </FadeInUp>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.upNextList}>
+                  {upNext.map((ep, i) => (
+                    <FadeInUp key={ep.id} delay={i * 70}>
+                      <PressableScale style={styles.upNextRow} onPress={() => openPlayer(ep)}>
+                        <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
+                          <Text style={styles.upNextTitle} numberOfLines={1}>{ep.subject}</Text>
+                          <Text style={styles.upNextDate}>{episodeDate(ep.received_at)}</Text>
+                        </View>
+                        <View style={styles.readyTag}>
+                          <Text style={styles.readyTagText}>READY</Text>
+                        </View>
+                        <Text style={styles.upNextDur}>{humanDuration(ep.audio_duration_s)}</Text>
+                      </PressableScale>
+                    </FadeInUp>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -317,6 +342,20 @@ export default function Home() {
                         </View>
                       </View>
                     </PressableScale>
+                  </FadeInUp>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Listen Again — episodes with listening history */}
+          {listenedOf(episodes).length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionHeading}>Listen Again</Text>
+              <View style={styles.tileGrid}>
+                {listenedOf(episodes).slice(0, desktop ? 6 : 4).map((ep, i) => (
+                  <FadeInUp key={ep.id} delay={i * 60} style={[styles.tileSlot, desktop && styles.tileSlotDesktop]}>
+                    <EpisodeTile episode={ep} onPress={() => openPlayer(ep)} />
                   </FadeInUp>
                 ))}
               </View>
@@ -460,6 +499,10 @@ const styles = StyleSheet.create({
 
   section: { gap: 12 },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTools: { flexDirection: "row", alignItems: "center", gap: 12 },
+  tileGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  tileSlot: { width: "47%", flexGrow: 1 },
+  tileSlotDesktop: { width: "31%", flexGrow: 0 },
   sectionLabel: { fontSize: 12, fontWeight: "600", color: C.muted, letterSpacing: 1.2 },
   sectionHeading: { fontSize: 21, fontWeight: "700", color: C.ink, letterSpacing: -0.2, fontFamily: SERIF },
   viewAll: { fontSize: 13, color: C.teal, fontWeight: "600" },

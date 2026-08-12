@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   LayoutChangeEvent,
   PanResponder,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -13,17 +13,19 @@ import {
 import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePlayer } from "../store/playerStore";
-import { SPEEDS, P, RADIUS } from "../lib/theme";
-import { mmss, episodeDate } from "../lib/format";
-import { extractChapters, Chapter } from "../lib/lines";
-import Avatar from "../components/Avatar";
-import LyricsView from "../components/LyricsView";
-import NewsletterReader from "../components/NewsletterReader";
-import { FadeInUp } from "../components/anim";
-import { useIsDesktop, CONTENT } from "../lib/responsive";
 import { useAuth } from "../store/authStore";
+import { SPEEDS, C, P, RADIUS, SERIF, SHADOW } from "../lib/theme";
+import { mmss, episodeDate } from "../lib/format";
+import { getPref, setPref } from "../lib/prefs";
+import { fetchRawHtml } from "../lib/gmail";
+import { useIsDesktop, CONTENT } from "../lib/responsive";
+import Avatar from "../components/Avatar";
+import ReadAlong from "../components/ReadAlong";
+import { FadeInUp } from "../components/anim";
 
-// Derive a dark gradient-style color from the newsletter name
+type Mode = "player" | "read" | "original";
+
+// Stacked-card art colors derived from the newsletter name.
 function artBg(name: string): string {
   const palette = ["#0d2818","#0d1828","#1a0d28","#28100d","#0d2828","#1a280d","#280d1a","#101028"];
   let h = 0;
@@ -31,26 +33,47 @@ function artBg(name: string): string {
   return palette[Math.abs(h) % palette.length];
 }
 
+// Theme palettes — LIGHT is the default; dark is a toggle at the top.
+const LIGHT = {
+  bg: C.bg, txt: C.ink, mut: C.muted, accent: C.teal, accentTxt: C.white,
+  surface: "#ECEAE2", border: C.border, track: "#E2E0D8", thumb: C.ink,
+  segBg: "#ECEAE2", segOn: C.white, segTxt: C.muted, segTxtOn: C.ink,
+};
+const DARK = {
+  bg: P.bg, txt: P.txt, mut: P.muted, accent: P.accent, accentTxt: "#04120A",
+  surface: P.surface, border: P.border, track: "rgba(255,255,255,0.12)", thumb: P.txt,
+  segBg: P.surface, segOn: P.card, segTxt: P.txtMid, segTxtOn: P.txt,
+};
+
 export default function Player() {
   const router = useRouter();
+  const desktop = useIsDesktop();
+  const token = useAuth((s) => s.accessToken);
   const {
     currentEpisode: ep,
     isPlaying,
     playbackPosition,
     duration,
     speed,
-    lyricsOpen,
     generating,
     togglePlay,
     skip,
     seek,
     setSpeed,
-    toggleLyrics,
   } = usePlayer();
 
-  const trackW = useRef(0);
+  const [dark, setDark] = useState(() => getPref("player_theme", "light") === "dark");
+  const [mode, setMode] = useState<Mode>("player");
+  const T = dark ? DARK : LIGHT;
 
-  // ── smooth scrubber: interpolate between 100ms status updates ────────────
+  function toggleTheme() {
+    const next = !dark;
+    setDark(next);
+    setPref("player_theme", next ? "dark" : "light");
+  }
+
+  // ── smooth scrubber (interpolates between 100ms status updates) ──────────
+  const trackW = useRef(0);
   const progress = useRef(new Animated.Value(0)).current;
   const baseline = useRef({ pos: playbackPosition, at: Date.now() });
   const scrubbing = useRef(false);
@@ -72,36 +95,6 @@ export default function Player() {
     return () => cancelAnimationFrame(raf);
   }, [duration, isPlaying, speed]);
 
-  // ── Spotify-style artwork: full size while playing, eases down when paused ─
-  const artScale = useRef(new Animated.Value(isPlaying ? 1 : 0.88)).current;
-  useEffect(() => {
-    Animated.spring(artScale, {
-      toValue: isPlaying ? 1 : 0.88,
-      useNativeDriver: false,
-      speed: 14,
-      bounciness: 7,
-    }).start();
-  }, [isPlaying]);
-
-  // ── play button press-spring ──────────────────────────────────────────────
-  const playScale = useRef(new Animated.Value(1)).current;
-  const springPlay = (v: number) =>
-    Animated.spring(playScale, { toValue: v, useNativeDriver: false, speed: 40, bounciness: 6 }).start();
-
-  const chapters = useMemo<Chapter[]>(() => {
-    if (!ep || !duration) return [];
-    return extractChapters(ep.tts_script ?? ep.raw_text ?? ep.subject, duration, ep.words);
-  }, [ep?.id, duration]);
-
-  const activeChapter = useMemo(() => {
-    if (!chapters.length) return -1;
-    let idx = 0;
-    for (let i = 0; i < chapters.length; i++) {
-      if (playbackPosition >= chapters[i].time) idx = i;
-    }
-    return idx;
-  }, [chapters, playbackPosition]);
-
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -120,259 +113,257 @@ export default function Player() {
     seek(frac * duration);
   }
 
+  // ── artwork breathing: full-size while playing, eases down paused ─────────
+  const artScale = useRef(new Animated.Value(isPlaying ? 1 : 0.92)).current;
+  useEffect(() => {
+    Animated.spring(artScale, {
+      toValue: isPlaying ? 1 : 0.92,
+      useNativeDriver: false, speed: 14, bounciness: 7,
+    }).start();
+  }, [isPlaying]);
+
+  const playScale = useRef(new Animated.Value(1)).current;
+  const springPlay = (v: number) =>
+    Animated.spring(playScale, { toValue: v, useNativeDriver: false, speed: 40, bounciness: 6 }).start();
+
+  // ── original email (raw HTML) for the Original mode ──────────────────────
+  const [html, setHtml] = useState<string | null>(null);
+  const [htmlErr, setHtmlErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (mode !== "original" || html || !ep?.gmail_message_id || !token) return;
+    fetchRawHtml(ep.gmail_message_id, token)
+      .then((h) => (h ? setHtml(h) : setHtmlErr("Couldn't load the original email.")))
+      .catch(() => setHtmlErr("Couldn't load the original email."));
+  }, [mode, ep?.gmail_message_id, token, html]);
+  useEffect(() => { setHtml(null); setHtmlErr(null); setMode("player"); }, [ep?.id]);
+
   function cycleSpeed() {
     const idx = SPEEDS.indexOf(speed as typeof SPEEDS[number]);
     setSpeed(SPEEDS[(idx + 1) % SPEEDS.length]);
   }
 
-  const desktop = useIsDesktop();
-  const token = useAuth((s) => s.accessToken);
-  const [readerOpen, setReaderOpen] = useState(false);
-
   if (!ep) return <Redirect href="/home" />;
 
-  if (readerOpen) {
-    return <NewsletterReader episode={ep} token={token} onClose={() => setReaderOpen(false)} />;
-  }
-
-  if (lyricsOpen) {
-    return (
-      <LyricsView
-        text={ep.tts_script ?? ep.raw_text ?? ep.subject}
-        duration={duration}
-        words={ep.words}
-        episode={ep}
-        onClose={toggleLyrics}
-        playbackPosition={playbackPosition}
-        isPlaying={isPlaying}
-        speed={speed}
-        onTogglePlay={togglePlay}
-        onSkip={skip}
-        onSeek={seek}
-        onSetSpeed={setSpeed}
-      />
-    );
-  }
+  const canOriginal = !!ep.gmail_message_id && !!token;
+  const stack1 = artBg(ep.sender_name);
+  const stack2 = artBg(ep.subject);
 
   return (
-    <View style={s.wrap}>
+    <View style={[s.wrap, { backgroundColor: T.bg }]}>
       <View style={[s.column, desktop && { maxWidth: CONTENT.player, alignSelf: "center", width: "100%" }]}>
-      <SafeAreaView edges={["top"]} style={{ backgroundColor: P.bg }}>
-        {/* ── top bar ── */}
-        <View style={s.topBar}>
-          <Pressable onPress={() => router.back()} style={s.iconCircle} hitSlop={8}>
-            <Text style={s.chevron}>⌄</Text>
-          </Pressable>
-          <View style={s.topCenter}>
-            <Text style={s.modeLabel}>NOW PLAYING</Text>
+        <SafeAreaView edges={["top"]} style={{ backgroundColor: T.bg }}>
+          {/* ── top bar: close · mode segments · theme ── */}
+          <View style={s.topBar}>
+            <Pressable onPress={() => router.back()} style={[s.iconCircle, { backgroundColor: T.surface }]} hitSlop={8}>
+              <Text style={[s.chevron, { color: T.txt }]}>⌄</Text>
+            </Pressable>
+
+            <View style={[s.segments, { backgroundColor: T.segBg }]}>
+              {([["player", "Player"], ["read", "Read"], ...(canOriginal ? [["original", "Original"]] : [])] as [Mode, string][]).map(([m, label]) => (
+                <Pressable
+                  key={m}
+                  onPress={() => setMode(m)}
+                  style={[s.segBtn, mode === m && { backgroundColor: T.segOn, ...(SHADOW.card as object) }]}
+                >
+                  <Text style={[s.segTxt, { color: mode === m ? T.segTxtOn : T.segTxt }]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable onPress={toggleTheme} style={[s.iconCircle, { backgroundColor: T.surface }]} hitSlop={8}>
+              <Text style={s.themeIcon}>{dark ? "☀️" : "🌙"}</Text>
+            </Pressable>
           </View>
-          <Pressable style={s.iconCircle} onPress={() => setReaderOpen(true)} hitSlop={8}>
-            <Text style={s.ccTop}>Aa</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
 
-      {/* ── artwork ── */}
-      <View style={s.artWrap}>
-        <Animated.View
-          style={[s.artBox, { backgroundColor: artBg(ep.sender_name), transform: [{ scale: artScale }] }]}
-        >
-          <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={100} />
-        </Animated.View>
-      </View>
+        {/* ── middle region: cover stack | read-along | original ── */}
+        {mode === "player" && (
+          <View style={s.centerZone}>
+            {/* stacked cards behind the artwork */}
+            <View style={s.artWrap}>
+              <View style={[s.stackCard, { backgroundColor: stack2, transform: [{ rotate: "6deg" }, { translateX: 14 }] }]} />
+              <View style={[s.stackCard, { backgroundColor: stack1, transform: [{ rotate: "-5deg" }, { translateX: -12 }] }]} />
+              <Animated.View style={[s.artBox, { backgroundColor: stack1, transform: [{ scale: artScale }] }]}>
+                <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={104} />
+              </Animated.View>
+            </View>
 
-      {/* ── episode info ── */}
-      <FadeInUp style={s.info}>
-        <Text style={s.senderLabel}>{ep.sender_name.toUpperCase()}</Text>
-        <Text style={s.title} numberOfLines={2}>{ep.subject}</Text>
-        {ep.received_at ? (
-          <Text style={s.dateLabel}>{episodeDate(ep.received_at)}</Text>
-        ) : null}
-        {chapters.length > 0 && activeChapter >= 0 && (
-          <Text style={s.chapterLabel}>{chapters[activeChapter].title}</Text>
+            <FadeInUp style={s.info}>
+              <Text style={[s.senderLabel, { color: T.accent }]}>{ep.sender_name.toUpperCase()}</Text>
+              <Text style={[s.title, { color: T.txt }]} numberOfLines={3}>{ep.subject}</Text>
+              {ep.received_at ? (
+                <Text style={[s.dateLabel, { color: T.mut }]}>{episodeDate(ep.received_at)}</Text>
+              ) : null}
+              {generating && (
+                <Text style={[s.genLabel, { color: T.mut }]}>Preparing audio…</Text>
+              )}
+            </FadeInUp>
+          </View>
         )}
-      </FadeInUp>
 
-      {/* ── scrubber ── */}
-      <View style={s.scrubWrap}>
-        <View
-          onLayout={(e: LayoutChangeEvent) => { trackW.current = e.nativeEvent.layout.width; }}
-          {...pan.panHandlers}
-          style={s.trackHit}
-        >
-          <View style={s.track} pointerEvents="none">
-            <Animated.View
-              style={[s.fill, {
-                width: progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
-              }]}
-            />
-            {chapters.map((ch, i) => (
-              <View key={i} style={[
-                s.tick,
-                { left: `${duration > 0 ? (ch.time / duration) * 100 : 0}%` },
-                i === activeChapter && s.tickOn,
-              ]} />
-            ))}
-            <Animated.View
-              style={[s.thumb, {
-                left: progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
-              }]}
-            />
+        {mode === "read" && (
+          <ReadAlong
+            episode={ep}
+            dark={dark}
+            duration={duration}
+            playbackPosition={playbackPosition}
+            isPlaying={isPlaying}
+            speed={speed}
+            onSeek={seek}
+          />
+        )}
+
+        {mode === "original" && (
+          <View style={{ flex: 1, backgroundColor: "#fff", borderRadius: RADIUS.chip, overflow: "hidden", marginHorizontal: 12 }}>
+            {!html && !htmlErr && (
+              <View style={s.centerFill}><ActivityIndicator color={C.teal} /></View>
+            )}
+            {htmlErr && <Text style={[s.notice, { color: C.muted }]}>{htmlErr}</Text>}
+            {html && Platform.OS === "web" && createElement("iframe", {
+              srcDoc: html,
+              sandbox: "allow-same-origin allow-popups",
+              style: { width: "100%", height: "100%", border: "none", background: "#fff" },
+            })}
+            {html && Platform.OS !== "web" && (
+              <Text style={[s.notice, { color: C.muted }]}>The original email view is available on the web app.</Text>
+            )}
+          </View>
+        )}
+
+        {/* ── scrubber ── */}
+        <View style={s.scrubWrap}>
+          <View
+            onLayout={(e: LayoutChangeEvent) => { trackW.current = e.nativeEvent.layout.width; }}
+            {...pan.panHandlers}
+            style={s.trackHit}
+          >
+            <View style={[s.track, { backgroundColor: T.track }]} pointerEvents="none">
+              <Animated.View
+                style={[s.fill, {
+                  backgroundColor: T.accent,
+                  width: progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
+                }]}
+              />
+              <Animated.View
+                style={[s.thumb, {
+                  backgroundColor: T.thumb,
+                  left: progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
+                }]}
+              />
+            </View>
+          </View>
+          <View style={s.timeRow}>
+            <Text style={[s.timeText, { color: T.mut }]}>{mmss(playbackPosition)}</Text>
+            <Text style={[s.timeText, { color: T.mut }]}>-{mmss(Math.max(0, duration - playbackPosition))}</Text>
           </View>
         </View>
-        <View style={s.timeRow}>
-          <Text style={s.timeText}>{mmss(playbackPosition)}</Text>
-          <Text style={s.timeText}>-{mmss(Math.max(0, duration - playbackPosition))}</Text>
+
+        {/* ── transport ── */}
+        <View style={s.controls}>
+          <Pressable onPress={cycleSpeed} style={[s.pill, { borderColor: T.border }]}>
+            <Text style={[s.pillTxt, { color: T.txt }]}>{speed}x</Text>
+          </Pressable>
+
+          <Pressable onPress={() => skip(-10)} style={s.skipWrap} hitSlop={8}>
+            <Text style={[s.skipArc, { color: T.txt }]}>↺</Text>
+            <Text style={[s.skipNum, { color: T.mut }]}>10</Text>
+          </Pressable>
+
+          <Pressable onPressIn={() => springPlay(0.9)} onPressOut={() => springPlay(1)} onPress={togglePlay} disabled={generating}>
+            <Animated.View style={[s.playBtn, { backgroundColor: T.accent, transform: [{ scale: playScale }] }, dark ? (SHADOW.glow(P.accent) as object) : (SHADOW.glow(C.teal) as object)]}>
+              {generating
+                ? <ActivityIndicator color={T.accentTxt} />
+                : <Text style={[s.playIcon, { color: T.accentTxt }]}>{isPlaying ? "❚❚" : "▶"}</Text>}
+            </Animated.View>
+          </Pressable>
+
+          <Pressable onPress={() => skip(10)} style={s.skipWrap} hitSlop={8}>
+            <Text style={[s.skipArc, { color: T.txt }]}>↻</Text>
+            <Text style={[s.skipNum, { color: T.mut }]}>10</Text>
+          </Pressable>
+
+          <Pressable onPress={() => setMode(mode === "read" ? "player" : "read")} style={[s.pill, { borderColor: T.border }, mode === "read" && { backgroundColor: T.accent, borderColor: T.accent }]}>
+            <Text style={[s.pillTxt, { color: mode === "read" ? T.accentTxt : T.txt }]}>Aa</Text>
+          </Pressable>
         </View>
-      </View>
 
-      {/* ── main controls ── */}
-      <View style={s.controls}>
-        <Pressable onPress={cycleSpeed} style={s.pill}>
-          <Text style={s.pillTxt}>{speed}x</Text>
-        </Pressable>
-
-        <Pressable onPress={() => skip(-10)} style={s.skipWrap} hitSlop={8}>
-          <Text style={s.skipArc}>↩</Text>
-          <Text style={s.skipNum}>10</Text>
-        </Pressable>
-
-        <Pressable onPressIn={() => springPlay(0.9)} onPressOut={() => springPlay(1)} onPress={togglePlay} disabled={generating}>
-          <Animated.View style={[s.playBtn, { transform: [{ scale: playScale }] }]}>
-            {generating
-              ? <ActivityIndicator color="#04120A" />
-              : <Text style={s.playIcon}>{isPlaying ? "❚❚" : "▶"}</Text>}
-          </Animated.View>
-        </Pressable>
-
-        <Pressable onPress={() => skip(10)} style={s.skipWrap} hitSlop={8}>
-          <Text style={s.skipArc}>↪</Text>
-          <Text style={s.skipNum}>10</Text>
-        </Pressable>
-
-        <Pressable onPress={toggleLyrics} style={s.pill}>
-          <Text style={s.pillTxt}>CC</Text>
-        </Pressable>
-      </View>
-
-      {/* ── chapter list ── */}
-      {chapters.length > 0 && (
-        <View style={s.chSection}>
-          <Text style={s.chHeader}>CHAPTERS</Text>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 150 }}>
-            {chapters.map((ch, i) => (
-              <Pressable
-                key={i}
-                style={[s.chRow, i === activeChapter && s.chRowOn]}
-                onPress={() => seek(ch.time)}
-              >
-                <View style={[s.chDot, i === activeChapter && s.chDotOn]} />
-                <Text style={s.chTime}>{mmss(ch.time)}</Text>
-                <Text style={[s.chTitle, i === activeChapter && s.chTitleOn]} numberOfLines={1}>
-                  {ch.title}
-                </Text>
-                {i === activeChapter && <Text style={s.nowTag}>NOW</Text>}
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      <SafeAreaView edges={["bottom"]} style={{ backgroundColor: P.bg }} />
+        <SafeAreaView edges={["bottom"]} style={{ backgroundColor: T.bg }} />
       </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: P.bg },
+  wrap: { flex: 1 },
   column: { flex: 1 },
 
   topBar: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20, paddingVertical: 12,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 10, gap: 10,
   },
   iconCircle: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: P.surface, alignItems: "center", justifyContent: "center",
-  },
-  chevron: { fontSize: 22, color: P.txt, lineHeight: 24, marginTop: 2 },
-  ccTop: { fontSize: 11, color: P.txt, fontWeight: "700", letterSpacing: 0.5 },
-  topCenter: { flex: 1, alignItems: "center" },
-  modeLabel: { fontSize: 11, color: P.muted, letterSpacing: 1.8, fontWeight: "600" },
-
-  artWrap: { alignItems: "center", paddingVertical: 24 },
-  artBox: {
-    width: 280, height: 280, borderRadius: RADIUS.xl,
     alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOpacity: 0.8,
-    shadowRadius: 40, shadowOffset: { width: 0, height: 20 },
+  },
+  chevron: { fontSize: 22, lineHeight: 24, marginTop: 2 },
+  themeIcon: { fontSize: 15 },
+
+  segments: { flexDirection: "row", borderRadius: RADIUS.pill, padding: 3, gap: 2 },
+  segBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: RADIUS.pill },
+  segTxt: { fontSize: 13, fontWeight: "600" },
+
+  centerZone: { flex: 1, justifyContent: "center", gap: 30, paddingBottom: 10 },
+
+  artWrap: { alignItems: "center", justifyContent: "center", height: 300 },
+  stackCard: {
+    position: "absolute", width: 240, height: 240, borderRadius: RADIUS.xl,
+    opacity: 0.28,
+  },
+  artBox: {
+    width: 260, height: 260, borderRadius: RADIUS.xl,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.35,
+    shadowRadius: 32, shadowOffset: { width: 0, height: 16 },
   },
 
-  info: { alignItems: "center", paddingHorizontal: 32, gap: 6 },
-  senderLabel: { fontSize: 12, fontWeight: "700", color: P.accent, letterSpacing: 1.5 },
-  title: { fontSize: 20, fontWeight: "700", color: P.txt, textAlign: "center", lineHeight: 28 },
-  dateLabel: { fontSize: 12, color: P.muted, textAlign: "center", marginTop: 2, letterSpacing: 0.3 },
-  chapterLabel: { fontSize: 14, color: P.muted, textAlign: "center" },
+  info: { alignItems: "center", paddingHorizontal: 36, gap: 7 },
+  senderLabel: { fontSize: 12, fontWeight: "700", letterSpacing: 1.5 },
+  title: { fontSize: 22, fontWeight: "700", textAlign: "center", lineHeight: 30, fontFamily: SERIF },
+  dateLabel: { fontSize: 13, textAlign: "center", letterSpacing: 0.3 },
+  genLabel: { fontSize: 13, fontStyle: "italic" },
 
-  scrubWrap: { paddingHorizontal: 24, marginTop: 22, gap: 8 },
-  trackHit: { height: 30, justifyContent: "center" },
-  track: { height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.1)", position: "relative" },
-  fill: { position: "absolute", height: 4, borderRadius: 2, backgroundColor: P.accent, top: 0, left: 0 },
+  centerFill: { flex: 1, alignItems: "center", justifyContent: "center" },
+  notice: { fontSize: 14, textAlign: "center", padding: 32 },
+
+  scrubWrap: { paddingHorizontal: 26, marginTop: 14, gap: 8 },
+  trackHit: { height: 32, justifyContent: "center" },
+  track: { height: 5, borderRadius: 3, position: "relative" },
+  fill: { position: "absolute", height: 5, borderRadius: 3, top: 0, left: 0 },
   thumb: {
-    position: "absolute", width: 14, height: 14, borderRadius: 7,
-    backgroundColor: P.txt, top: -5, marginLeft: -7,
+    position: "absolute", width: 16, height: 16, borderRadius: 8,
+    top: -5.5, marginLeft: -8,
+    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
   },
-  tick: {
-    position: "absolute", width: 2, height: 8, borderRadius: 1,
-    backgroundColor: "rgba(255,255,255,0.15)", top: -2, marginLeft: -1,
-  },
-  tickOn: { backgroundColor: P.accent, opacity: 0.8 },
   timeRow: { flexDirection: "row", justifyContent: "space-between" },
-  timeText: { fontSize: 12, color: P.muted, fontVariant: ["tabular-nums"] },
+  timeText: { fontSize: 12, fontVariant: ["tabular-nums"] },
 
   controls: {
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 28, paddingVertical: 20,
+    paddingHorizontal: 30, paddingVertical: 18,
   },
   pill: {
-    minWidth: 54, height: 34, borderRadius: RADIUS.pill,
-    borderWidth: 1.5, borderColor: P.border,
-    alignItems: "center", justifyContent: "center",
-    paddingHorizontal: 10,
+    minWidth: 54, height: 36, borderRadius: RADIUS.pill,
+    borderWidth: 1.5,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 12,
   },
-  pillTxt: { fontSize: 13, color: P.txt, fontWeight: "700" },
-  skipWrap: { alignItems: "center", gap: 2 },
-  skipArc: { fontSize: 28, color: P.txt },
-  skipNum: { fontSize: 11, color: P.muted, marginTop: -4 },
+  pillTxt: { fontSize: 13.5, fontWeight: "700" },
+  skipWrap: { alignItems: "center", gap: 1 },
+  skipArc: { fontSize: 27 },
+  skipNum: { fontSize: 10.5, marginTop: -5 },
   playBtn: {
-    width: 76, height: 76, borderRadius: 38,
-    backgroundColor: P.accent, alignItems: "center", justifyContent: "center",
-    shadowColor: P.accent, shadowOpacity: 0.5, shadowRadius: 20, shadowOffset: { width: 0, height: 6 },
+    width: 78, height: 78, borderRadius: 39,
+    alignItems: "center", justifyContent: "center",
   },
-  playIcon: { color: "#04120A", fontSize: 28 },
-
-  chSection: {
-    marginHorizontal: 20, borderTopWidth: 0.5,
-    borderTopColor: P.border,
-    paddingTop: 12, gap: 6,
-  },
-  chHeader: { fontSize: 10, fontWeight: "600", color: P.muted, letterSpacing: 1.4 },
-  chRow: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    paddingVertical: 8, paddingHorizontal: 10, borderRadius: RADIUS.chip,
-  },
-  chRowOn: { backgroundColor: P.accentDim },
-  chDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.15)" },
-  chDotOn: { backgroundColor: P.accent, width: 8, height: 8, borderRadius: 4 },
-  chTime: { fontSize: 12, color: P.muted, fontVariant: ["tabular-nums"], width: 36 },
-  chTitle: { flex: 1, fontSize: 13, color: P.muted },
-  chTitleOn: { color: P.txt, fontWeight: "600" },
-  nowTag: {
-    fontSize: 9, fontWeight: "700", color: P.accent,
-    backgroundColor: P.accentDim,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, letterSpacing: 0.8,
-  },
+  playIcon: { fontSize: 28 },
 });

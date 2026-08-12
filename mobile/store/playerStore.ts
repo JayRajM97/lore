@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { trackPlay } from "../lib/discovery";
 import { synthesizeForEpisode } from "../lib/tts";
 import { saveEpisodes } from "../lib/db";
+import { setProgress } from "../lib/progress";
 import { useAuth } from "./authStore";
 
 interface PlayerState {
@@ -54,7 +55,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       });
       if (s.didJustFinish) {
         const ep = get().currentEpisode;
-        if (ep) api.updateProgress(ep.id, get().duration, true);
+        if (ep) {
+          api.updateProgress(ep.id, get().duration, true);
+          setProgress(ep.id, get().duration, true); // powers Listened/Listen Again
+        }
         set({ isPlaying: false });
       }
     });
@@ -131,7 +135,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   pause: async () => {
     await AudioService.pause();
     const ep = get().currentEpisode;
-    if (ep) api.updateProgress(ep.id, get().playbackPosition, false);
+    if (ep) {
+      api.updateProgress(ep.id, get().playbackPosition, false);
+      setProgress(ep.id, get().playbackPosition, false);
+    }
   },
   togglePlay: async () => {
     get().isPlaying ? await get().pause() : await get().resume();
