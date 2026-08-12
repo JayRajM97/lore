@@ -45,6 +45,27 @@ function looksLikeFooter(text: string): boolean {
   return FOOTER_MARKERS.some((m) => m.test(text));
 }
 
+// ── sponsor / ad detection ────────────────────────────────────────────────────
+// Newsletters (Sahil Bloom, Morning Brew, etc.) embed sponsor sections that the
+// narrator would otherwise read aloud. Two-tier heuristic:
+//   - a sponsor HEADING ("Together with Athletic Greens", "Today's sponsor")
+//     drops the whole section until the next heading;
+//   - a strongly ad-marked TEXT block drops just that block.
+const SPONSOR_STRONG =
+  /\b(today'?s (sponsor|newsletter is brought to you by)|sponsored by|this (issue|email|edition) is sponsored|brought to you by|presented by|in partnership with|thanks to (our|today'?s) (sponsor|partner)|a message from our (sponsor|partner)|paid promotion|partner message|advertisement\b|\bpromoted\b)/i;
+// "Together with X" is the classic sponsor-header pattern, but only trust it in
+// short heading-like lines to avoid nuking prose that happens to use the phrase.
+const SPONSOR_HEADING = /^(together with|sponsored?( by)?|a word from|from our (sponsor|partner)s?)\b/i;
+
+function isSponsorHeading(text: string): boolean {
+  const words = text.trim().split(/\s+/).length;
+  return (SPONSOR_HEADING.test(text.trim()) && words <= 8) || SPONSOR_STRONG.test(text);
+}
+
+function isSponsorText(text: string): boolean {
+  return SPONSOR_STRONG.test(text);
+}
+
 // ── HTML → raw blocks ─────────────────────────────────────────────────────────
 function tagKind(tag: string): ContentBlock["type"] | null {
   if (/^h[1-6]$/.test(tag)) return "heading";
@@ -132,14 +153,25 @@ export function buildContent(html: string): Content {
   const raw = htmlToBlocks(html);
   const kept: ContentBlock[] = [];
   let words = 0;
+  let inSponsorSection = false;
 
   for (const b of raw) {
+    // Sponsor section: a sponsor heading mutes everything until the next
+    // (non-sponsor) heading; images inside the section drop with it.
+    if (b.type === "heading") {
+      inSponsorSection = isSponsorHeading(b.text);
+      if (inSponsorSection) continue;
+    } else if (inSponsorSection) {
+      continue;
+    }
+
     if (b.type === "image") {
       if (kept.length > 0) kept.push(b); // skip leading images
       continue;
     }
     const cleaned = cleanProse(b.text);
     if (!cleaned) continue;
+    if (isSponsorText(cleaned)) continue; // standalone ad block
     if (words > 40 && looksLikeFooter(cleaned)) break; // stop at footer
 
     const bw = cleaned.split(/\s+/).filter(Boolean).length;

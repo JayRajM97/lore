@@ -28,6 +28,9 @@ export interface Episode {
   newsletter_id: string;
   sender_name: string;
   sender_logo_url?: string | null;
+  sender_email?: string;     // needed to synthesize on demand (generate-on-play)
+  frequency?: string | null;
+  pending?: boolean;         // true = showcased but not yet synthesized; audio_url empty
   subject: string;
   raw_text?: string;
   tts_script?: string;       // display script (spoken text + [image: url] markers) for lyrics

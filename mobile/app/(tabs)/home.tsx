@@ -19,6 +19,7 @@ import Avatar from "../../components/Avatar";
 import { FadeInUp, PressableScale } from "../../components/anim";
 import { useIsDesktop, CONTENT } from "../../lib/responsive";
 import { ensureAccessToken } from "../../lib/tokens";
+import { fetchTrendingEpisodes } from "../../lib/discovery";
 
 const MAX_W = 720;
 
@@ -34,6 +35,15 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false);
   const [showReadyBanner, setShowReadyBanner] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [globalEps, setGlobalEps] = useState<Episode[] | null>(null);
+
+  // Catalog-first onboarding: signed-out visitors browse and play the global
+  // feed of already-converted newsletters — no Gmail required.
+  useEffect(() => {
+    if (loaded && !user) {
+      fetchTrendingEpisodes(30).then(setGlobalEps).catch(() => setGlobalEps([]));
+    }
+  }, [loaded, user]);
 
   useEffect(() => {
     const load = async () => {
@@ -92,8 +102,55 @@ export default function Home() {
 
   const gmailConnected = !!user;
 
-  // ── EMPTY STATE ──
+  // ── SIGNED-OUT: catalog-first browse (fall back to the connect pitch when
+  //    the global catalog is still empty) ──
   if (loaded && !gmailConnected) {
+    if (globalEps && globalEps.length > 0) {
+      return (
+        <SafeAreaView style={styles.wrap} edges={["top"]}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            <View style={[styles.inner, desktop && { maxWidth: CONTENT.feedWide, padding: 24 }]}>
+              {/* Browse header: logo + Connect pill */}
+              <View style={styles.header}>
+                <Text style={styles.headerLogo}>Lore!</Text>
+                <PressableScale style={styles.connectPill} to={0.95} onPress={() => router.push("/(auth)/gmail")}>
+                  <Text style={styles.connectPillText}>Connect Gmail</Text>
+                </PressableScale>
+              </View>
+
+              <FadeInUp style={{ gap: 6 }}>
+                <Text style={styles.browseTitle}>The internet's best newsletters, spoken aloud</Text>
+                <Text style={styles.browseSub}>
+                  Fresh issues, already converted to audio. Tap play to listen — connect
+                  Gmail whenever you want your own inbox in here.
+                </Text>
+              </FadeInUp>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionHeading}>Latest on Lore</Text>
+                <View style={styles.upNextList}>
+                  {globalEps.map((ep, i) => (
+                    <FadeInUp key={ep.id} delay={Math.min(i, 8) * 60}>
+                      <PressableScale style={styles.upNextRow} onPress={() => openPlayer(ep)}>
+                        <Avatar name={ep.sender_name} url={ep.sender_logo_url} size={44} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={styles.upNextSender} numberOfLines={1}>{ep.sender_name}</Text>
+                          <Text style={styles.upNextTitle} numberOfLines={2}>{ep.subject}</Text>
+                          <Text style={styles.upNextDate}>{episodeDate(ep.received_at)} · {humanDuration(ep.audio_duration_s)}</Text>
+                        </View>
+                        <View style={styles.browsePlay}>
+                          <Text style={styles.browsePlayIcon}>▶</Text>
+                        </View>
+                      </PressableScale>
+                    </FadeInUp>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.wrap} edges={["top"]}>
         <EmptyDashboard
@@ -369,6 +426,25 @@ const styles = StyleSheet.create({
 
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerLogo: { fontSize: 20, fontWeight: "800", color: C.ink, letterSpacing: -0.5 },
+
+  // catalog-first browse (signed-out)
+  connectPill: {
+    backgroundColor: C.indigo, borderRadius: RADIUS.pill,
+    paddingVertical: 9, paddingHorizontal: 16,
+    ...(SHADOW.glow(C.indigo) as object),
+  },
+  connectPillText: { color: C.white, fontWeight: "700", fontSize: 13 },
+  browseTitle: {
+    fontSize: 28, fontWeight: "700", color: C.ink, fontFamily: SERIF,
+    letterSpacing: -0.3, lineHeight: 35,
+  },
+  browseSub: { fontSize: 14, color: C.muted, lineHeight: 20 },
+  browsePlay: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: C.teal,
+    alignItems: "center", justifyContent: "center",
+    ...(SHADOW.glow(C.teal) as object),
+  },
+  browsePlayIcon: { color: C.white, fontSize: 13, marginLeft: 2 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   syncBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.teal50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.teal },
   syncBtnText: { fontSize: 17, color: C.teal, fontWeight: "700" },

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { usePlayer } from "../store/playerStore";
 import { C, P, RADIUS, SHADOW } from "../lib/theme";
@@ -9,7 +9,7 @@ import Avatar from "./Avatar";
 // with a live progress hairline along its bottom edge.
 export default function MiniPlayer() {
   const router = useRouter();
-  const { currentEpisode, isPlaying, playbackPosition, duration, speed, togglePlay } = usePlayer();
+  const { currentEpisode, isPlaying, playbackPosition, duration, speed, generating, togglePlay } = usePlayer();
 
   // slide-up + fade on first appearance
   const intro = useRef(new Animated.Value(0)).current;
@@ -73,7 +73,9 @@ export default function MiniPlayer() {
             hitSlop={10}
           >
             <Animated.View style={[styles.btn, { transform: [{ scale: btnScale }] }]}>
-              <Text style={styles.icon}>{isPlaying ? "❚❚" : "▶"}</Text>
+              {generating
+                ? <ActivityIndicator size="small" color="#04120A" />
+                : <Text style={styles.icon}>{isPlaying ? "❚❚" : "▶"}</Text>}
             </Animated.View>
           </Pressable>
         </View>

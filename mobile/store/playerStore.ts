@@ -3,6 +3,9 @@ import { Episode } from "../lib/types";
 import { AudioService } from "../services/AudioService";
 import { api } from "../lib/api";
 import { trackPlay } from "../lib/discovery";
+import { synthesizeForEpisode } from "../lib/tts";
+import { saveEpisodes } from "../lib/db";
+import { useAuth } from "./authStore";
 
 interface PlayerState {
   currentEpisode: Episode | null;
@@ -12,6 +15,7 @@ interface PlayerState {
   speed: number;
   lyricsOpen: boolean;
   ready: boolean;
+  generating: boolean; // generate-on-play: synthesizing audio right now
 
   init: () => Promise<void>;
   play: (episode: Episode) => Promise<void>;
@@ -35,6 +39,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   speed: 1,
   lyricsOpen: false,
   ready: false,
+  generating: false,
 
   init: async () => {
     if (wired) return;
@@ -58,6 +63,53 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
   play: async (episode) => {
     const same = get().currentEpisode?.id === episode.id;
+
+    // GENERATE-ON-PLAY: a showcased-but-unsynthesized episode gets its audio
+    // made right here, the moment the user actually wants to hear it.
+    if ((episode.pending || !episode.audio_url) && episode.raw_text && episode.sender_email) {
+      set({
+        currentEpisode: episode,
+        duration: episode.audio_duration_s,
+        playbackPosition: 0,
+        generating: true,
+        isPlaying: false,
+      });
+      try {
+        const uid = useAuth.getState().user?.sub ?? "anonymous";
+        const r = await synthesizeForEpisode({
+          uid,
+          senderEmail: episode.sender_email,
+          senderName: episode.sender_name,
+          senderLogoUrl: episode.sender_logo_url,
+          frequency: episode.frequency,
+          subject: episode.subject,
+          text: episode.raw_text,
+          receivedAt: episode.received_at,
+        });
+        episode = {
+          ...episode,
+          pending: false,
+          audio_url: r.audioUrl,
+          audio_duration_s: r.durationS,
+          words: r.words ?? episode.words,
+          word_count: r.wordCount ?? episode.word_count,
+          generation_time_ms: r.generationTimeMs,
+        };
+        // Update the session cache + persist the now-real episode.
+        (globalThis as any).__lore_episodes = [
+          ...(((globalThis as any).__lore_episodes ?? []) as Episode[]).filter((e) => e.id !== episode.id),
+          episode,
+        ];
+        const user = useAuth.getState().user;
+        if (user) saveEpisodes(user.sub, [episode]).catch(() => {});
+      } catch (e) {
+        console.error("[player] generate-on-play failed:", e);
+        set({ generating: false });
+        return;
+      }
+      set({ generating: false, currentEpisode: episode });
+    }
+
     // Global play_count: count a genuine new play, not a resume of the same ep.
     // episode.id == episode_hash for shared-audio episodes; no-ops otherwise.
     if (!same) trackPlay(episode.id);

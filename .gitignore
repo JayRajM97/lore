@@ -38,3 +38,4 @@ google-services.json
 *.mp3
 *.wav
 .vercel
+mobile/ios/

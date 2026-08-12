@@ -27,8 +27,47 @@ npx expo run:ios        # needs Xcode installed; builds + installs on simulator/
 First run compiles native code (~5 min). After that it's the same fast Metro reload.
 The dev build reads `GoogleService-Info.plist` and the `CFBundleURLTypes` scheme from `app.json`.
 
+If you are testing on iOS simulator, the app can talk to a backend running on your Mac
+via `http://localhost:8000`.
+
+If you are testing on a physical device, point the backend to your Mac's local LAN IP:
+
+```bash
+EXPO_PUBLIC_BACKEND_URL=http://192.168.<your-ip>:8000 npx expo run:ios
+```
+
 (If you only want to demo the UI without real auth, Expo Go still works — but tapping
 "Connect Gmail" won't complete.)
+
+## iOS dev build checklist
+
+1. Install Xcode and the Xcode command-line tools.
+2. Install Node.js / npm on your Mac so `npx` works.
+3. In `/Users/jay/Documents/jay-claude/lore/mobile`, run:
+
+```bash
+npm install
+```
+
+4. Make sure `mobile/app.json` contains the iOS bundle ID and URL scheme:
+   - `bundleIdentifier`: `com.lore.app`
+   - `CFBundleURLSchemes`: `com.googleusercontent.apps.331040043777-ef75f5ot1po0029u1kjv3gao23khmv8j`
+
+5. (Optional but recommended) If you are using Firebase native features, place the
+   downloaded `GoogleService-Info.plist` from Firebase into `mobile/`.
+6. Run the development build:
+
+```bash
+cd mobile
+npx expo run:ios
+```
+
+7. If your backend is local and you want the mobile app to call it, run the sidecar on your
+   Mac and use the simulator URL or LAN IP as described above.
+
+8. In Google Cloud Console, confirm the iOS OAuth client is configured for:
+   - package/bundle ID `com.lore.app`
+   - reversed client ID `com.googleusercontent.apps.331040043777-ef75f5ot1po0029u1kjv3gao23khmv8j`
 
 ---
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   LayoutChangeEvent,
   PanResponder,
@@ -39,6 +40,7 @@ export default function Player() {
     duration,
     speed,
     lyricsOpen,
+    generating,
     togglePlay,
     skip,
     seek,
@@ -235,9 +237,11 @@ export default function Player() {
           <Text style={s.skipNum}>10</Text>
         </Pressable>
 
-        <Pressable onPressIn={() => springPlay(0.9)} onPressOut={() => springPlay(1)} onPress={togglePlay}>
+        <Pressable onPressIn={() => springPlay(0.9)} onPressOut={() => springPlay(1)} onPress={togglePlay} disabled={generating}>
           <Animated.View style={[s.playBtn, { transform: [{ scale: playScale }] }]}>
-            <Text style={s.playIcon}>{isPlaying ? "❚❚" : "▶"}</Text>
+            {generating
+              ? <ActivityIndicator color="#04120A" />
+              : <Text style={s.playIcon}>{isPlaying ? "❚❚" : "▶"}</Text>}
           </Animated.View>
         </Pressable>
 

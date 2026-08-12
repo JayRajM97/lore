@@ -55,6 +55,35 @@ export async function fetchCatalog(following: string[] = []): Promise<GlobalNews
   });
 }
 
+/** Catalog-first onboarding: the newest globally-converted episodes, playable
+ *  by ANYONE — no Gmail, no account. Joined with the catalog for names/logos. */
+export async function fetchTrendingEpisodes(max = 30): Promise<Episode[]> {
+  const [epsSnap, catalog] = await Promise.all([
+    getDocs(collection(db, "global_episodes")),
+    fetchCatalog(),
+  ]);
+  const byId = new Map(catalog.map((n) => [n.sender_hash, n]));
+  return epsSnap.docs
+    .map((d) => ({ ...(d.data() as GlobalEpisode & { tts_script?: string }), episode_hash: d.id }))
+    .filter((ge) => !!ge.audio_url)
+    .sort((a, b) => +new Date(b.received_at) - +new Date(a.received_at))
+    .slice(0, max)
+    .map((ge) => {
+      const nl = byId.get(ge.newsletter_id);
+      return {
+        id: ge.episode_hash,
+        newsletter_id: ge.newsletter_id,
+        sender_name: nl?.sender_name ?? "Newsletter",
+        sender_logo_url: nl?.logo_url ?? null,
+        subject: ge.subject,
+        tts_script: ge.tts_script,
+        audio_url: ge.audio_url,
+        audio_duration_s: ge.audio_duration_s,
+        received_at: ge.received_at,
+      } as Episode;
+    });
+}
+
 export function sortPopular(items: GlobalNewsletter[]): GlobalNewsletter[] {
   return [...items].sort((a, b) => (b.follower_count ?? 0) - (a.follower_count ?? 0));
 }

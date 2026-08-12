@@ -12,8 +12,10 @@ export default function Splash() {
   useEffect(() => {
     Animated.timing(fade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
     const t = setTimeout(() => {
-      const hasSession = restore(); // populates store from localStorage
-      router.replace(hasSession ? "/home" : "/(auth)/onboarding");
+      restore(); // populates store from localStorage (ok if no session)
+      // Catalog-first: everyone lands on home. Signed-out visitors browse and
+      // play the global feed; Connect Gmail is a pill in the header.
+      router.replace("/home");
     }, 800); // shorter splash — user already knows the app
     return () => clearTimeout(t);
   }, []);

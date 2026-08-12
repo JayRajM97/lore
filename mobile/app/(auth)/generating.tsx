@@ -12,13 +12,13 @@ import {
 import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C, RADIUS, SHADOW } from "../../lib/theme";
-import { Newsletter, Episode } from "../../lib/types";
+import { Newsletter, Episode, GlobalEpisode } from "../../lib/types";
 import { fetchRecentEmails, FetchedEmail } from "../../lib/gmail";
-import { synthesizeForEpisode } from "../../lib/tts";
 import { saveEpisodes, getEpisodes } from "../../lib/db";
 import { useAuth } from "../../store/authStore";
 import { currentUid } from "../../lib/discovery";
-import { doc, setDoc, arrayUnion } from "firebase/firestore";
+import { episodeHash, newsletterHash } from "../../lib/hash";
+import { doc, setDoc, getDoc, arrayUnion } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import Avatar from "../../components/Avatar";
 import { FadeInUp, PressableScale } from "../../components/anim";
@@ -101,56 +101,49 @@ export default function Generating() {
         let skipped = 0;
         let lastWordCount = 0;
         let lastGenMs = 0;
-        let newsletterId: string | null = null;
-        // Firebase Auth uid for global catalog attribution; falls back to the
-        // Google sub if Firebase sign-in (fired at /gmail) hasn't resolved yet.
+        let newsletterId: string | null = await newsletterHash(nl.sender_email);
         const uid = currentUid() ?? user?.sub ?? "anonymous";
         for (const emailData of emailsData) {
-          // Real dedup now happens server-side (one episode per sender per
-          // calendar day, via Shared Audio Nodes) — this local check just
-          // avoids a redundant network round-trip for episodes from this
-          // session.
-          let result;
-          try {
-            result = await synthesizeForEpisode({
-              uid,
-              senderEmail: nl.sender_email,
-              senderName: nl.sender_name,
-              senderLogoUrl: nl.sender_logo_url,
-              frequency: nl.frequency,
-              subject: emailData.subject,
-              text: emailData.text,
-              receivedAt: emailData.date,
-            });
-          } catch {
-            continue;
-          }
-          const epId = result.episodeHash;
-          newsletterId = result.newsletterId;
+          // GENERATE-ON-PLAY: no TTS here. Compute the content-addressed id,
+          // reuse existing global audio when someone already generated this
+          // issue, otherwise create a pending placeholder — synthesis happens
+          // the moment the user presses play (playerStore).
+          const epId = await episodeHash(nl.sender_email, new Date(emailData.date));
           if (existingIds.has(epId)) {
             skipped++;
             continue;
           }
           existingIds.add(epId);
+
+          let existingGlobal: GlobalEpisode | null = null;
+          try {
+            const snap = await getDoc(doc(db, "global_episodes", epId));
+            if (snap.exists()) existingGlobal = snap.data() as GlobalEpisode;
+          } catch { /* offline/rules — treat as miss */ }
+
+          const wordCount = emailData.text.split(/\s+/).filter(Boolean).length;
           episodeCount++;
-          lastWordCount = result.wordCount ?? 0;
-          lastGenMs = result.generationTimeMs ?? 0;
+          lastWordCount = wordCount;
+          lastGenMs = 0;
           episodes.push({
             id: epId,
-            newsletter_id: result.newsletterId,
+            newsletter_id: newsletterId,
             sender_name: nl.sender_name,
             sender_logo_url: nl.sender_logo_url,
-            subject: result.subject,
+            sender_email: nl.sender_email,
+            frequency: nl.frequency,
+            subject: emailData.subject,
             raw_text: emailData.text,
             tts_script: emailData.displayScript,
             blocks: emailData.blocks,
             gmail_message_id: emailData.id,
-            audio_url: result.audioUrl,
-            audio_duration_s: result.durationS,
-            received_at: result.receivedAt,
-            words: result.words,
-            word_count: result.wordCount,
-            generation_time_ms: result.generationTimeMs,
+            // Reuse global audio if it exists; otherwise pending with a
+            // words-per-minute duration estimate for the UI.
+            pending: !existingGlobal,
+            audio_url: existingGlobal?.audio_url ?? "",
+            audio_duration_s: existingGlobal?.audio_duration_s ?? Math.round(wordCount / 2.5),
+            received_at: emailData.date,
+            word_count: wordCount,
           });
           (globalThis as any).__lore_episodes = [
             ...(((globalThis as any).__lore_episodes ?? []) as Episode[]).filter(

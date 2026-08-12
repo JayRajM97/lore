@@ -29,7 +29,8 @@ export default function Profile() {
 
   function signOut() {
     clear();
-    router.replace("/(auth)/onboarding");
+    // Catalog-first: signed-out users still browse the global feed on home.
+    router.replace("/home");
   }
 
   function addMore() {
