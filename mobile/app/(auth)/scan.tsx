@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { FadeInUp, PressableScale } from "../../components/anim";
 import { scanInbox } from "../../lib/gmail";
 import { useAuth } from "../../store/authStore";
+import { usePlayer } from "../../store/playerStore";
 import { ensureAccessToken } from "../../lib/tokens";
+import { fetchTrendingEpisodes } from "../../lib/discovery";
+import { Episode } from "../../lib/types";
+import EpisodeTile from "../../components/EpisodeTile";
+import MiniPlayer from "../../components/MiniPlayer";
 
 const STEPS = [
   "Checking the last 30 days",
@@ -18,11 +23,22 @@ const STEPS = [
 export default function Scan() {
   const router = useRouter();
   const accessToken = useAuth((s) => s.accessToken);
+  const play = usePlayer((s) => s.play);
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [scanDone, setScanDone] = useState(false);
+  const [explore, setExplore] = useState<Episode[]>([]);
+  // If the user starts listening while we scan, don't yank them away when the
+  // scan finishes — show a "Continue" banner instead.
+  const interacted = useRef(false);
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
   const dot3 = useRef(new Animated.Value(0)).current;
+
+  // Explore-while-you-wait: global catalog, playable right here via MiniPlayer.
+  useEffect(() => {
+    fetchTrendingEpisodes(8).then(setExplore).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!accessToken) {
@@ -31,6 +47,13 @@ export default function Scan() {
         if (!t) router.replace("/(auth)/gmail");
         // if a token arrived, the store update re-runs this effect with it
       });
+      return;
+    }
+
+    // Coming back (e.g. from the player) with results already in hand? Show
+    // the completion state instead of re-scanning.
+    if ((globalThis as any).__lore_scan?.length) {
+      setScanDone(true);
       return;
     }
 
@@ -55,7 +78,9 @@ export default function Scan() {
       .then((res) => {
         (globalThis as any).__lore_scan = res;
         (globalThis as any).__lore_generating = null;
-        router.replace("/(auth)/discover");
+        setScanDone(true);
+        // Only auto-advance if the user hasn't engaged with the catalog.
+        if (!interacted.current) router.replace("/(auth)/discover");
       })
       .catch((e) => {
         console.error(e);
@@ -65,11 +90,15 @@ export default function Scan() {
     return () => clearInterval(cycle);
   }, [accessToken]);
 
+  function playEpisode(ep: Episode) {
+    interacted.current = true;
+    play(ep); // MiniPlayer below picks it up — no navigation, scan continues
+  }
+
   return (
-    <SafeAreaView style={styles.wrap}>
-      <View style={styles.center}>
-        <FadeInUp style={styles.fadeCol}>
-          {/* Icon */}
+    <SafeAreaView style={styles.wrap} edges={["top"]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <FadeInUp style={styles.statusCol}>
           <View style={styles.iconWrap}>
             <Text style={styles.icon}>✉</Text>
           </View>
@@ -84,6 +113,20 @@ export default function Scan() {
                 onPress={() => router.replace("/(auth)/gmail")}
               >
                 <Text style={styles.retryText}>Reconnect Gmail</Text>
+              </PressableScale>
+            </>
+          ) : scanDone ? (
+            <>
+              <Text style={styles.title}>Scan complete</Text>
+              <Text style={styles.sub}>
+                We found {((globalThis as any).__lore_scan ?? []).length} newsletters in your inbox.
+              </Text>
+              <PressableScale
+                style={styles.continueBtn}
+                to={0.95}
+                onPress={() => router.replace("/(auth)/discover")}
+              >
+                <Text style={styles.continueText}>Pick your newsletters →</Text>
               </PressableScale>
             </>
           ) : (
@@ -101,27 +144,50 @@ export default function Scan() {
             </>
           )}
         </FadeInUp>
-      </View>
+
+        {/* Explore while you wait */}
+        {!error && explore.length > 0 && (
+          <View style={styles.exploreSection}>
+            <FadeInUp delay={200}>
+              <Text style={styles.exploreHeading}>Listen while you wait</Text>
+              <Text style={styles.exploreSub}>
+                Newsletters already converted on Lore — tap play, the scan keeps running.
+              </Text>
+            </FadeInUp>
+            <View style={styles.tileGrid}>
+              {explore.map((ep, i) => (
+                <FadeInUp key={ep.id} delay={260 + Math.min(i, 8) * 60} style={styles.tileSlot}>
+                  <EpisodeTile episode={ep} onPress={() => playEpisode(ep)} />
+                </FadeInUp>
+              ))}
+            </View>
+          </View>
+        )}
+        <View style={{ height: 24 }} />
+      </ScrollView>
+
+      {/* Inline playback — stays on this screen while the scan runs */}
+      <MiniPlayer />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: C.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, gap: 16 },
-  fadeCol: { alignItems: "center", gap: 16 },
+  scroll: { paddingHorizontal: 20, paddingTop: 28, maxWidth: 720, width: "100%", alignSelf: "center" },
+  statusCol: { alignItems: "center", gap: 14 },
 
   iconWrap: {
-    width: 72, height: 72, borderRadius: RADIUS.card,
+    width: 64, height: 64, borderRadius: RADIUS.card,
     backgroundColor: C.indigo,
     alignItems: "center", justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 4,
     ...(SHADOW.glow(C.indigo) as object),
   },
-  icon: { fontSize: 30, color: C.white },
+  icon: { fontSize: 26, color: C.white },
 
-  title: { fontSize: 26, fontFamily: SERIF, fontWeight: "700", color: C.ink, letterSpacing: -0.3, textAlign: "center" },
-  sub: { fontSize: 15, color: C.muted, textAlign: "center" },
+  title: { fontSize: 25, fontFamily: SERIF, fontWeight: "700", color: C.ink, letterSpacing: -0.3, textAlign: "center" },
+  sub: { fontSize: 14.5, color: C.muted, textAlign: "center" },
 
   dotsRow: { flexDirection: "row", gap: 6, alignItems: "center" },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.indigo },
@@ -132,4 +198,17 @@ const styles = StyleSheet.create({
     ...(SHADOW.glow(C.coral) as object),
   },
   retryText: { color: C.white, fontWeight: "600" },
+
+  continueBtn: {
+    marginTop: 8, backgroundColor: C.teal, borderRadius: RADIUS.pill,
+    paddingHorizontal: 26, paddingVertical: 14,
+    ...(SHADOW.glow(C.teal) as object),
+  },
+  continueText: { color: C.white, fontWeight: "700", fontSize: 15 },
+
+  exploreSection: { marginTop: 36, gap: 14 },
+  exploreHeading: { fontSize: 20, fontWeight: "700", color: C.ink, fontFamily: SERIF },
+  exploreSub: { fontSize: 13.5, color: C.muted, marginTop: 4 },
+  tileGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  tileSlot: { width: "47%", flexGrow: 1 },
 });
