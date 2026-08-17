@@ -1,0 +1,27 @@
+diff --git a/node_modules/expo/Expo.podspec b/node_modules/expo/Expo.podspec
+index 5be4f75..b0e71bd 100644
+--- a/node_modules/expo/Expo.podspec
++++ b/node_modules/expo/Expo.podspec
+@@ -99,7 +99,6 @@ Pod::Spec.new do |s|
+ 
+   s.dependency 'React-RCTAppDelegate'
+   s.dependency 'React-RCTFabric'
+-  s.dependency 'ReactAppDependencyProvider'
+ 
+   install_modules_dependencies(s)
+ 
+diff --git a/node_modules/expo/ios/AppDelegates/ExpoAppDelegate.swift b/node_modules/expo/ios/AppDelegates/ExpoAppDelegate.swift
+index ab95b08..12e6b84 100644
+--- a/node_modules/expo/ios/AppDelegates/ExpoAppDelegate.swift
++++ b/node_modules/expo/ios/AppDelegates/ExpoAppDelegate.swift
+@@ -1,7 +1,10 @@
+ import Dispatch
+ import Foundation
+ import ExpoModulesCore
++// RN 0.76 has no ReactAppDependencyProvider module; unused in this file.
++#if canImport(ReactAppDependencyProvider)
+ import ReactAppDependencyProvider
++#endif
+ 
+ /**
+  Note: you cannot subclass Swift from Objective-C, use EXAppDelegateWrapper with Obj-C app delegates
