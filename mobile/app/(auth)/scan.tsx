@@ -80,7 +80,7 @@ export default function Scan() {
         (globalThis as any).__lore_generating = null;
         setScanDone(true);
         // Only auto-advance if the user hasn't engaged with the catalog.
-        if (!interacted.current) router.replace("/(auth)/discover");
+        if (!interacted.current) router.replace("/(auth)/select");
       })
       .catch((e) => {
         console.error(e);
@@ -124,7 +124,7 @@ export default function Scan() {
               <PressableScale
                 style={styles.continueBtn}
                 to={0.95}
-                onPress={() => router.replace("/(auth)/discover")}
+                onPress={() => router.replace("/(auth)/select")}
               >
                 <Text style={styles.continueText}>Pick your newsletters →</Text>
               </PressableScale>

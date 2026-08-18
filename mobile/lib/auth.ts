@@ -3,7 +3,7 @@ import * as Google from "expo-auth-session/build/providers/Google";
 import { ResponseType, makeRedirectUri } from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
-import { GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, GOOGLE_SCOPES } from "./config";
+import { GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, GOOGLE_IOS_REVERSED, GOOGLE_SCOPES } from "./config";
 import { GoogleUser } from "../store/authStore";
 
 // Required so the auth popup can hand control back to the app.
@@ -37,6 +37,9 @@ export function useGoogleAuth() {
           iosClientId: GOOGLE_IOS_CLIENT_ID,
           webClientId: GOOGLE_WEB_CLIENT_ID,
           scopes: GOOGLE_SCOPES,
+          // auth-session v7 defaults to the app scheme (lore:/...), which
+          // Google's iOS client rejects; it only accepts its reversed-id scheme.
+          redirectUri: `${GOOGLE_IOS_REVERSED}:/oauth2redirect`,
         }
   );
 }

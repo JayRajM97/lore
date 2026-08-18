@@ -204,7 +204,7 @@ export default function Generating() {
   }, [done]);
 
   function goBack() {
-    router.canGoBack() ? router.back() : router.replace("/(auth)/discover");
+    router.canGoBack() ? router.back() : router.replace("/(auth)/select");
   }
 
   function goHome() {
