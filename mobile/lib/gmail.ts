@@ -207,10 +207,7 @@ export async function fetchRecentEmails(
         const hdrs: Record<string, string> = {};
         for (const h of msg?.payload?.headers ?? []) hdrs[h.name] = h.value;
         const subject = hdrs["Subject"] ?? newsletter.sender_name;
-        const rawDate = hdrs["Date"] ?? null;
-        const date = rawDate
-          ? (() => { try { return new Date(rawDate).toISOString(); } catch { return new Date().toISOString(); } })()
-          : new Date().toISOString();
+        const date = safeIsoDate(hdrs["Date"]);
         const plainRaw = findPart(msg.payload, "text/plain");
         const htmlRaw = findPart(msg.payload, "text/html");
 
@@ -318,6 +315,23 @@ function domainMatches(domain: string, list: string[]): boolean {
   return list.some((d) => domain === d || domain.endsWith("." + d));
 }
 
+// Hermes's Date parser is stricter than V8: RFC-2822 headers with trailing
+// zone comments ("... +0530 (IST)") or nonstandard spacing produce Invalid
+// Date, and toISOString() then throws "Date value out of bounds". Parse
+// defensively and fall back to now.
+export function safeIsoDate(raw: string | null | undefined): string {
+  if (raw) {
+    const candidates = [raw, raw.replace(/\s*\([^)]*\)\s*$/, "").trim()];
+    for (const c of candidates) {
+      const d = new Date(c);
+      if (!isNaN(+d)) {
+        try { return d.toISOString(); } catch { /* out of range */ }
+      }
+    }
+  }
+  return new Date().toISOString();
+}
+
 // Frequency from the median gap between consecutive emails — window-agnostic,
 // so it's correct whether we scanned 30 or 120 days. Falls back to Weekly when
 // there's only one sample (most newsletters are weekly).
@@ -389,7 +403,7 @@ function parseMessage(msg: any): MsgMeta | null {
     sender_email: email,
     sender_name: name,
     subject,
-    date,
+    date: safeIsoDate(date), // normalize at the source — Hermes-safe
     score,
   });
 
@@ -502,7 +516,7 @@ export async function scanInbox(accessToken: string): Promise<Newsletter[]> {
       sender_name: msgs[0].sender_name,
       sender_logo_url: domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null,
       frequency: frequencyFromDates(msgs.map((mm) => mm.date)),
-      last_received_at: new Date(msgs[0].date).toISOString(),
+      last_received_at: safeIsoDate(msgs[0].date),
       episode_count: msgs.length,
       is_following: false,
     });

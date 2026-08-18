@@ -12,7 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.jayraj.lore",
       "entitlements": {
-        "com.apple.security.application-groups": ["group.com.jayraj.lore"]
+        "com.apple.security.application-groups": [
+          "group.com.jayraj.lore"
+        ]
       },
       "infoPlist": {
         "UIBackgroundModes": [
@@ -42,7 +44,20 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["@bacons/apple-targets", { "appleTeamId": "HSVB2Q4W33" }]
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "HSVB2Q4W33"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

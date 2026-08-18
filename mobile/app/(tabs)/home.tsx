@@ -22,6 +22,7 @@ import { ensureAccessToken } from "../../lib/tokens";
 import { fetchTrendingEpisodes } from "../../lib/discovery";
 import { getPref, setPref } from "../../lib/prefs";
 import { withProgress, listenedOf } from "../../lib/progress";
+import { seedWidgetEpisodes } from "../../lib/widget";
 import ViewToggle, { ViewMode } from "../../components/ViewToggle";
 import EpisodeTile from "../../components/EpisodeTile";
 
@@ -53,7 +54,12 @@ export default function Home() {
   // feed of already-converted newsletters — no Gmail required.
   useEffect(() => {
     if (loaded && !user) {
-      fetchTrendingEpisodes(30).then(setGlobalEps).catch(() => setGlobalEps([]));
+      fetchTrendingEpisodes(30)
+        .then((eps) => {
+          setGlobalEps(eps);
+          seedWidgetEpisodes(eps); // signed-out: widget shows the catalog
+        })
+        .catch(() => setGlobalEps([]));
     }
   }, [loaded, user]);
 
@@ -67,7 +73,9 @@ export default function Home() {
       const sessionEps: Episode[] = (globalThis as any).__lore_episodes ?? [];
       const inFirestore = new Set(firestoreEps.map((e) => e.id));
       const sessionOnly = sessionEps.filter((e) => !inFirestore.has(e.id));
-      setEpisodes(withProgress([...firestoreEps, ...sessionOnly]));
+      const merged = withProgress([...firestoreEps, ...sessionOnly]);
+      setEpisodes(merged);
+      seedWidgetEpisodes(merged); // widget shows newest even before any play
       setFollows(fol);
       setLoaded(true);
       if ((globalThis as any).__lore_just_generated) {
