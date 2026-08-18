@@ -84,8 +84,29 @@ export async function fetchTrendingEpisodes(max = 30): Promise<Episode[]> {
     });
 }
 
+// ── topic tagging (heuristic until newsletters carry real topic metadata) ────
+export const TOPICS = ["Tech & AI", "Business & Finance", "Life & Growth", "Culture & Media"] as const;
+export type Topic = (typeof TOPICS)[number];
+
+const TOPIC_PATTERNS: [Topic, RegExp][] = [
+  ["Tech & AI", /\b(tech|ai|ml|engineer|product|code|coding|dev|software|startup|founder|pragmatic|stratechery|platformer|hacker|data)\b/i],
+  ["Business & Finance", /\b(money|finance|financial|market|invest|business|econom|fintech|stocks?|trading|brew|crypto|wealth)\b/i],
+  ["Life & Growth", /\b(habit|life|growth|wisdom|curiosity|mind|mental|health|fitness|clear|bloom|brain|stoic|productivity)\b/i],
+  ["Culture & Media", /\b(culture|media|news|world|politics|browser|dispatch|essay|book|art|film|music)\b/i],
+];
+
+export function topicOf(n: GlobalNewsletter): Topic | null {
+  const hay = `${n.sender_name} ${n.sender_email}`;
+  for (const [topic, re] of TOPIC_PATTERNS) if (re.test(hay)) return topic;
+  return null;
+}
+
 export function sortPopular(items: GlobalNewsletter[]): GlobalNewsletter[] {
   return [...items].sort((a, b) => (b.follower_count ?? 0) - (a.follower_count ?? 0));
+}
+
+export function sortMostEpisodes(items: GlobalNewsletter[]): GlobalNewsletter[] {
+  return [...items].sort((a, b) => (b.episode_count ?? 0) - (a.episode_count ?? 0));
 }
 export function sortTrending(items: GlobalNewsletter[]): GlobalNewsletter[] {
   return [...items]
