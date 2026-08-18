@@ -75,6 +75,8 @@ export async function saveEpisodes(userId: string, episodes: Episode[]) {
         audio_url: e.audio_url,
         audio_duration_s: e.audio_duration_s,
         received_at: e.received_at,
+        fetched_at: e.fetched_at ?? null,
+        converted_at: e.converted_at ?? null,
         word_count: e.word_count ?? null,
         generation_time_ms: e.generation_time_ms ?? null,
         created_at: serverTimestamp(),

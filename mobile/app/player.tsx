@@ -190,7 +190,10 @@ export default function Player() {
               <Text style={[s.senderLabel, { color: T.accent }]}>{ep.sender_name.toUpperCase()}</Text>
               <Text style={[s.title, { color: T.txt }]} numberOfLines={3}>{ep.subject}</Text>
               {ep.received_at ? (
-                <Text style={[s.dateLabel, { color: T.mut }]}>{episodeDate(ep.received_at)}</Text>
+                <Text style={[s.dateLabel, { color: T.mut }]}>
+                  {episodeDate(ep.received_at)}
+                  {ep.converted_at ? `  ·  converted ${episodeDate(ep.converted_at)}` : ep.fetched_at ? `  ·  fetched ${episodeDate(ep.fetched_at)}` : ""}
+                </Text>
               ) : null}
               {generating && (
                 <Text style={[s.genLabel, { color: T.mut }]}>Preparing audio…</Text>

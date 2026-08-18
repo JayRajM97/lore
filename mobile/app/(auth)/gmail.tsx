@@ -5,10 +5,24 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { FadeInUp, PressableScale } from "../../components/anim";
 import { Platform } from "react-native";
-import { useGoogleAuth, fetchGoogleUser, WEB_REDIRECT_URI } from "../../lib/auth";
+import { useGoogleAuth, WEB_REDIRECT_URI, NATIVE_REDIRECT_URI } from "../../lib/auth";
 import { exchangeCode } from "../../lib/tokens";
+import { GOOGLE_IOS_CLIENT_ID } from "../../lib/config";
 import { useAuth } from "../../store/authStore";
 import { signIntoFirebase } from "../../lib/firebaseAuth";
+
+// Google's consent screen shows Gmail access as an UNCHECKED checkbox for
+// unverified apps — users often miss it. Verify the grant before proceeding.
+async function hasGmailScope(accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 const FEATURES = [
   { icon: "⚡", label: "Smart Filtering", desc: "Only real newsletters — no notifications, no junk." },
@@ -26,29 +40,30 @@ export default function GmailConnect() {
   useEffect(() => {
     if (response?.type === "success") {
       const finish = async () => {
-        if (Platform.OS === "web") {
-          // Code flow: sidecar exchanges the code, stores the refresh token,
-          // and returns access token + identity. One consent, then silent sync.
-          const code = (response as any).params?.code;
-          if (!code) throw new Error("No auth code returned");
-          const r = await exchangeCode(code, WEB_REDIRECT_URI, request?.codeVerifier ?? undefined);
-          await signIntoFirebase(r.idToken ?? undefined, r.accessToken).catch(() => {});
-          setSession(r.user, r.accessToken);
-        } else {
-          // Native: implicit flow (until the dev-build auth work lands).
-          const token = response.authentication?.accessToken;
-          const idToken = response.authentication?.idToken;
-          if (!token) throw new Error("No access token returned");
-          const [, user] = await Promise.all([
-            signIntoFirebase(idToken, token).catch(() => {}),
-            fetchGoogleUser(token),
-          ]);
-          setSession(user, token);
+        // Code flow on BOTH platforms: the sidecar exchanges the code, stores
+        // the refresh token, returns access token + identity. Connect once.
+        const code = (response as any).params?.code;
+        if (!code) throw new Error("No auth code returned");
+        const isWeb = Platform.OS === "web";
+        const r = await exchangeCode(
+          code,
+          isWeb ? WEB_REDIRECT_URI : NATIVE_REDIRECT_URI,
+          request?.codeVerifier ?? undefined,
+          isWeb ? undefined : GOOGLE_IOS_CLIENT_ID
+        );
+        // Guard: token valid but Gmail checkbox not ticked on the consent
+        // screen → tell the user exactly what to fix instead of failing later.
+        if (!(await hasGmailScope(r.accessToken))) {
+          setError("Google didn't grant Gmail access. Tap Connect again and tick the Gmail checkbox on the consent screen.");
+          setBusy(false);
+          return;
         }
+        await signIntoFirebase(r.idToken ?? undefined, r.accessToken).catch(() => {});
+        setSession(r.user, r.accessToken);
         router.replace("/(auth)/scan");
       };
-      finish().catch(() => {
-        setError("Couldn't connect Gmail. Try again.");
+      finish().catch((e) => {
+        setError(`Couldn't connect Gmail (${String(e?.message ?? e).slice(0, 80)}). Try again.`);
         setBusy(false);
       });
     } else if (response?.type === "error" || response?.type === "dismiss") {

@@ -656,20 +656,28 @@ class ExchangeRequest(BaseModel):
     code: str
     redirect_uri: str
     code_verifier: str | None = None
+    client_id: str | None = None  # set by native apps (iOS client, no secret)
 
 
 @app.post("/auth/google/exchange")
 def google_exchange(req: ExchangeRequest):
-    """Exchange an auth code for tokens; store the refresh token server-side."""
-    if not GOOGLE_OAUTH_CLIENT_SECRET:
+    """Exchange an auth code for tokens; store the refresh token server-side.
+
+    Web codes exchange with the web client id + secret. Native (installed-app)
+    codes exchange with the native client id and NO secret — Google issues
+    refresh tokens to installed apps on PKCE alone.
+    """
+    is_native = bool(req.client_id) and req.client_id != GOOGLE_OAUTH_CLIENT_ID
+    if not is_native and not GOOGLE_OAUTH_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="GOOGLE_OAUTH_CLIENT_SECRET not configured")
     form = {
         "code": req.code,
-        "client_id": GOOGLE_OAUTH_CLIENT_ID,
-        "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+        "client_id": req.client_id or GOOGLE_OAUTH_CLIENT_ID,
         "redirect_uri": req.redirect_uri,
         "grant_type": "authorization_code",
     }
+    if not is_native:
+        form["client_secret"] = GOOGLE_OAUTH_CLIENT_SECRET
     if req.code_verifier:
         form["code_verifier"] = req.code_verifier
     tokens = _google_token_call(form)
@@ -688,10 +696,12 @@ def google_exchange(req: ExchangeRequest):
     if refresh_token and FIRESTORE is not None:
         FIRESTORE.collection("gmail_tokens").document(info["sub"]).set({
             "refresh_token": refresh_token,
+            # Refresh grants must reuse the SAME client the token was issued to.
+            "client_id": form["client_id"],
             "email": info.get("email"),
             "updated_at": fb_firestore.SERVER_TIMESTAMP,
         })
-        print(f"[lore] stored refresh token for {info.get('email')}", flush=True)
+        print(f"[lore] stored refresh token for {info.get('email')} (client {form['client_id'][:20]}…)", flush=True)
 
     return JSONResponse({
         "access_token": access_token,
@@ -720,16 +730,21 @@ def google_silent_token(req: SilentTokenRequest):
     snap = FIRESTORE.collection("gmail_tokens").document(req.uid).get()
     if not snap.exists:
         raise HTTPException(status_code=404, detail="No refresh token on file")
-    refresh_token = (snap.to_dict() or {}).get("refresh_token")
+    doc_data = snap.to_dict() or {}
+    refresh_token = doc_data.get("refresh_token")
     if not refresh_token:
         raise HTTPException(status_code=404, detail="No refresh token on file")
+    stored_client = doc_data.get("client_id") or GOOGLE_OAUTH_CLIENT_ID
+    form = {
+        "client_id": stored_client,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    # Web-client tokens need the secret; installed-app (iOS) tokens must NOT send one.
+    if stored_client == GOOGLE_OAUTH_CLIENT_ID:
+        form["client_secret"] = GOOGLE_OAUTH_CLIENT_SECRET
     try:
-        tokens = _google_token_call({
-            "client_id": GOOGLE_OAUTH_CLIENT_ID,
-            "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        })
+        tokens = _google_token_call(form)
     except HTTPException as e:
         # invalid_grant → user revoked access; clear so the client re-consents.
         if e.status_code == 400:

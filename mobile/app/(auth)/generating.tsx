@@ -143,6 +143,8 @@ export default function Generating() {
             audio_url: existingGlobal?.audio_url ?? "",
             audio_duration_s: existingGlobal?.audio_duration_s ?? Math.round(wordCount / 2.5),
             received_at: emailData.date,
+            fetched_at: new Date().toISOString(),
+            converted_at: existingGlobal ? new Date().toISOString() : undefined,
             word_count: wordCount,
           });
           (globalThis as any).__lore_episodes = [

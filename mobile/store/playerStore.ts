@@ -95,6 +95,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
           pending: false,
           audio_url: r.audioUrl,
           audio_duration_s: r.durationS,
+          converted_at: new Date().toISOString(),
           words: r.words ?? episode.words,
           word_count: r.wordCount ?? episode.word_count,
           generation_time_ms: r.generationTimeMs,

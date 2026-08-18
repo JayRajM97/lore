@@ -20,12 +20,13 @@ interface ExchangeResult {
 export async function exchangeCode(
   code: string,
   redirectUri: string,
-  codeVerifier?: string
+  codeVerifier?: string,
+  clientId?: string // omit = web client; pass the iOS client id on native
 ): Promise<ExchangeResult> {
   const res = await fetch(`${BACKEND_URL}/auth/google/exchange`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, redirect_uri: redirectUri, code_verifier: codeVerifier }),
+    body: JSON.stringify({ code, redirect_uri: redirectUri, code_verifier: codeVerifier, client_id: clientId }),
   });
   if (!res.ok) throw new Error(`exchange failed: ${res.status} ${await res.text()}`);
   const j = await res.json();

@@ -84,7 +84,12 @@ export default function Scan() {
       })
       .catch((e) => {
         console.error(e);
-        setError("Scan failed. Check your connection and try again.");
+        const detail = String(e?.message ?? e).slice(0, 120);
+        setError(
+          /gmail 40[13]/i.test(detail)
+            ? "Google didn't grant Gmail access — reconnect and tick the Gmail checkbox on the consent screen."
+            : `Scan failed: ${detail}`
+        );
       });
 
     return () => clearInterval(cycle);

@@ -38,7 +38,9 @@ export interface Episode {
   gmail_message_id?: string; // for re-fetching the original HTML ("View original")
   audio_url: string;
   audio_duration_s: number;
-  received_at: string; // ISO
+  received_at: string;       // ISO — when the email arrived
+  fetched_at?: string;       // ISO — when Lore pulled it from Gmail
+  converted_at?: string;     // ISO — when audio was actually synthesized
   words?: WordTs[];          // per-word timestamps from Kokoro, for lyrics sync
   word_count?: number;       // total words synthesized
   generation_time_ms?: number;

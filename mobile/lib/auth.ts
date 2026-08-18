@@ -37,12 +37,20 @@ export function useGoogleAuth() {
           iosClientId: GOOGLE_IOS_CLIENT_ID,
           webClientId: GOOGLE_WEB_CLIENT_ID,
           scopes: GOOGLE_SCOPES,
+          // Same code-flow as web: the sidecar exchanges the code (no secret
+          // needed for iOS clients) and stores a refresh token, so native
+          // users also connect ONCE. offline+consent forces the refresh token.
+          responseType: ResponseType.Code,
+          shouldAutoExchangeCode: false,
+          extraParams: { access_type: "offline", prompt: "consent" },
           // auth-session v7 defaults to the app scheme (lore:/...), which
           // Google's iOS client rejects; it only accepts its reversed-id scheme.
           redirectUri: `${GOOGLE_IOS_REVERSED}:/oauth2redirect`,
         }
   );
 }
+
+export const NATIVE_REDIRECT_URI = `${GOOGLE_IOS_REVERSED}:/oauth2redirect`;
 
 // Resolve the signed-in user's identity from an access token.
 export async function fetchGoogleUser(accessToken: string): Promise<GoogleUser> {

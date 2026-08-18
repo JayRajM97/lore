@@ -11,12 +11,12 @@ export default function Splash() {
 
   useEffect(() => {
     Animated.timing(fade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-    const t = setTimeout(() => {
-      restore(); // populates store from localStorage (ok if no session)
-      // Catalog-first: everyone lands on home. Signed-out visitors browse and
-      // play the global feed; Connect Gmail is a pill in the header.
+    const t = setTimeout(async () => {
+      // Await native Keychain restore so a signed-in user never flashes the
+      // signed-out home. Catalog-first: everyone lands on /home either way.
+      await restore().catch(() => {});
       router.replace("/home");
-    }, 800); // shorter splash — user already knows the app
+    }, 600);
     return () => clearTimeout(t);
   }, []);
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persistSession, restoreSession, clearSession } from "../lib/session";
+import { persistSession, restoreSession, restoreSessionSync, clearSession } from "../lib/session";
 
 export interface GoogleUser {
   sub: string; // stable Google user id
@@ -11,22 +11,20 @@ export interface GoogleUser {
 interface AuthState {
   user: GoogleUser | null;
   accessToken: string | null;
-  // Kept for index.tsx routing logic (returns true if session found).
-  restore: () => boolean;
+  restore: () => Promise<boolean>;
   setSession: (user: GoogleUser, accessToken: string) => void;
   clear: () => void;
 }
 
-// Restore synchronously at module load — localStorage is synchronous, so the
-// store is pre-populated before any component renders. This means refreshing
-// at /home, /library, or any deep URL still has the user object immediately.
-const _initial = restoreSession();
+// Web: localStorage is synchronous, so hydrate before the first render.
+// Native: starts null; index.tsx awaits restore() (Keychain) before routing.
+const _initial = restoreSessionSync();
 
 export const useAuth = create<AuthState>((set) => ({
   user: _initial?.user ?? null,
   accessToken: _initial?.accessToken ?? null,
-  restore: () => {
-    const s = restoreSession();
+  restore: async () => {
+    const s = await restoreSession();
     if (!s) return false;
     set({ user: s.user, accessToken: s.accessToken });
     return true;
