@@ -1,7 +1,21 @@
-import { Audio, AVPlaybackStatus } from "expo-av";
+import TrackPlayer, {
+  AppKilledPlaybackBehavior,
+  Capability,
+  Event,
+  State,
+} from "react-native-track-player";
 
-// Singleton wrapper around a single expo-av Sound. The Zustand PlayerStore is
-// the ONLY thing that talks to this; components talk to the store.
+// NATIVE audio engine: react-native-track-player. Gives us what expo-av
+// can't: background playback with a lock-screen / notification card showing
+// artwork + title, with play/pause, ±15s jumps, and scrubbing.
+// (Web resolves AudioService.web.ts instead — expo-av + Media Session.)
+
+export interface TrackMeta {
+  title?: string;
+  artist?: string;
+  artworkUrl?: string | null;
+}
+
 type StatusCb = (s: {
   isLoaded: boolean;
   isPlaying: boolean;
@@ -10,101 +24,140 @@ type StatusCb = (s: {
   didJustFinish: boolean;
 }) => void;
 
+// Handles remote-control events from the lock screen / notification.
+// Registered at module scope so it's in place before any playback starts.
+TrackPlayer.registerPlaybackService(() => async () => {
+  TrackPlayer.addEventListener(Event.RemotePlay, () => TrackPlayer.play());
+  TrackPlayer.addEventListener(Event.RemotePause, () => TrackPlayer.pause());
+  TrackPlayer.addEventListener(Event.RemoteJumpForward, async (e) => {
+    const p = await TrackPlayer.getProgress();
+    await TrackPlayer.seekTo(Math.min(p.position + (e.interval ?? 15), p.duration || p.position + 15));
+  });
+  TrackPlayer.addEventListener(Event.RemoteJumpBackward, async (e) => {
+    const p = await TrackPlayer.getProgress();
+    await TrackPlayer.seekTo(Math.max(0, p.position - (e.interval ?? 15)));
+  });
+  TrackPlayer.addEventListener(Event.RemoteSeek, (e) => TrackPlayer.seekTo(e.position));
+});
+
 class AudioServiceImpl {
-  private sound: Audio.Sound | null = null;
   private cb: StatusCb | null = null;
   private currentUrl: string | null = null;
+  private setup = false;
+  private lastPlaying = false;
+  private lastPos = 0;
+  private lastDur = 0;
 
   async init() {
-    // setAudioModeAsync is iOS/Android only — skip on web.
-    if (typeof Audio.setAudioModeAsync === "function") {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-        });
-      } catch {
-        // ignore on platforms that don't support it
-      }
+    if (this.setup) return;
+    try {
+      await TrackPlayer.setupPlayer({ autoHandleInterruptions: true });
+    } catch (e: any) {
+      // "player already initialized" after a JS reload — safe to continue
+      if (!String(e?.message ?? e).includes("already been initialized")) throw e;
     }
+    await TrackPlayer.updateOptions({
+      android: {
+        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+      },
+      capabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.JumpForward,
+        Capability.JumpBackward,
+        Capability.SeekTo,
+      ],
+      compactCapabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.JumpForward,
+        Capability.JumpBackward,
+      ],
+      forwardJumpInterval: 15,
+      backwardJumpInterval: 15,
+      progressUpdateEventInterval: 0.25,
+    });
+
+    TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, (e) => {
+      this.lastPos = e.position;
+      this.lastDur = e.duration;
+      this.emit(false);
+    });
+    TrackPlayer.addEventListener(Event.PlaybackState, (e) => {
+      this.lastPlaying = e.state === State.Playing;
+      this.emit(false);
+    });
+    TrackPlayer.addEventListener(Event.PlaybackQueueEnded, () => {
+      this.lastPlaying = false;
+      this.emit(true);
+    });
+    this.setup = true;
+  }
+
+  private emit(didJustFinish: boolean) {
+    this.cb?.({
+      isLoaded: !!this.currentUrl,
+      isPlaying: this.lastPlaying,
+      positionMillis: this.lastPos * 1000,
+      durationMillis: this.lastDur * 1000,
+      didJustFinish,
+    });
   }
 
   onStatus(cb: StatusCb) {
     this.cb = cb;
   }
 
-  // Web's HTMLMediaElement reports NaN/Infinity for position & duration until
-  // metadata loads; coerce to a safe finite number so downstream math never
-  // produces NaN (which crashes el.currentTime = NaN).
-  private finite = (n: unknown, fallback = 0) =>
-    typeof n === "number" && Number.isFinite(n) ? n : fallback;
-
-  private handleStatus = (status: AVPlaybackStatus) => {
-    if (!this.cb) return;
-    if (!status.isLoaded) {
-      this.cb({ isLoaded: false, isPlaying: false, positionMillis: 0, durationMillis: 0, didJustFinish: false });
+  async load(url: string, opts?: { positionS?: number; rate?: number; autoplay?: boolean }, meta?: TrackMeta) {
+    await this.init();
+    if (this.currentUrl === url) {
+      if (opts?.autoplay) await TrackPlayer.play();
       return;
     }
-    this.cb({
-      isLoaded: true,
-      isPlaying: status.isPlaying,
-      positionMillis: this.finite(status.positionMillis),
-      durationMillis: this.finite(status.durationMillis),
-      didJustFinish: status.didJustFinish ?? false,
+    await TrackPlayer.reset();
+    await TrackPlayer.add({
+      url,
+      title: meta?.title ?? "Lore episode",
+      artist: meta?.artist ?? "Lore",
+      artwork: meta?.artworkUrl ?? undefined,
     });
-  };
-
-  async load(url: string, opts?: { positionS?: number; rate?: number; autoplay?: boolean }) {
-    if (this.currentUrl === url && this.sound) {
-      if (opts?.autoplay) await this.sound.playAsync();
-      return;
-    }
-    await this.unload();
-    const startMs = Math.max(0, Math.round(this.finite(opts?.positionS) * 1000));
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: url },
-      {
-        shouldPlay: opts?.autoplay ?? true,
-        positionMillis: startMs,
-        rate: opts?.rate ?? 1,
-        shouldCorrectPitch: true,
-        progressUpdateIntervalMillis: 100,
-      },
-      this.handleStatus
-    );
-    this.sound = sound;
     this.currentUrl = url;
+    if (opts?.positionS && opts.positionS > 0) await TrackPlayer.seekTo(opts.positionS);
+    if (opts?.rate && opts.rate !== 1) await TrackPlayer.setRate(opts.rate);
+    if (opts?.autoplay ?? true) await TrackPlayer.play();
   }
 
   async unload() {
-    if (this.sound) {
-      try {
-        await this.sound.unloadAsync();
-      } catch {
-        // ignore
-      }
-      this.sound = null;
-      this.currentUrl = null;
+    try {
+      await TrackPlayer.reset();
+    } catch {
+      // ignore
     }
+    this.currentUrl = null;
   }
 
   async play() {
-    await this.sound?.playAsync();
+    await TrackPlayer.play();
   }
   async pause() {
-    await this.sound?.pauseAsync();
+    await TrackPlayer.pause();
   }
   async seek(seconds: number) {
-    if (!Number.isFinite(seconds)) return; // guard NaN scrub before metadata loads
-    await this.sound?.setPositionAsync(Math.max(0, Math.round(seconds * 1000)));
+    if (!Number.isFinite(seconds)) return;
+    await TrackPlayer.seekTo(Math.max(0, seconds));
+    this.lastPos = Math.max(0, seconds);
   }
   async setRate(rate: number) {
-    await this.sound?.setRateAsync(rate, true);
+    await TrackPlayer.setRate(rate);
   }
-  /** Live position read for the lyrics rAF loop (avoids store churn). */
+  /** Live position read for rAF loops. */
   async positionS(): Promise<number> {
-    const st = await this.sound?.getStatusAsync();
-    return st && st.isLoaded ? (st.positionMillis ?? 0) / 1000 : 0;
+    try {
+      const p = await TrackPlayer.getProgress();
+      return p.position;
+    } catch {
+      return this.lastPos;
+    }
   }
 }
 

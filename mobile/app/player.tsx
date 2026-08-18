@@ -1,10 +1,9 @@
-import { createElement, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   LayoutChangeEvent,
   PanResponder,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,13 +13,15 @@ import { Redirect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePlayer } from "../store/playerStore";
 import { useAuth } from "../store/authStore";
-import { SPEEDS, C, P, RADIUS, SERIF, SHADOW } from "../lib/theme";
+import { C, P, RADIUS, SERIF, SHADOW } from "../lib/theme";
 import { mmss, episodeDate } from "../lib/format";
 import { getPref, setPref } from "../lib/prefs";
 import { fetchRawHtml } from "../lib/gmail";
 import { useIsDesktop, CONTENT } from "../lib/responsive";
 import Avatar from "../components/Avatar";
 import ReadAlong from "../components/ReadAlong";
+import HtmlView from "../components/HtmlView";
+import SpeedSlider from "../components/SpeedSlider";
 import { FadeInUp } from "../components/anim";
 
 type Mode = "player" | "read" | "original";
@@ -137,10 +138,7 @@ export default function Player() {
   }, [mode, ep?.gmail_message_id, token, html]);
   useEffect(() => { setHtml(null); setHtmlErr(null); setMode("player"); }, [ep?.id]);
 
-  function cycleSpeed() {
-    const idx = SPEEDS.indexOf(speed as typeof SPEEDS[number]);
-    setSpeed(SPEEDS[(idx + 1) % SPEEDS.length]);
-  }
+  const [speedOpen, setSpeedOpen] = useState(false);
 
   if (!ep) return <Redirect href="/home" />;
 
@@ -219,14 +217,7 @@ export default function Player() {
               <View style={s.centerFill}><ActivityIndicator color={C.teal} /></View>
             )}
             {htmlErr && <Text style={[s.notice, { color: C.muted }]}>{htmlErr}</Text>}
-            {html && Platform.OS === "web" && createElement("iframe", {
-              srcDoc: html,
-              sandbox: "allow-same-origin allow-popups",
-              style: { width: "100%", height: "100%", border: "none", background: "#fff" },
-            })}
-            {html && Platform.OS !== "web" && (
-              <Text style={[s.notice, { color: C.muted }]}>The original email view is available on the web app.</Text>
-            )}
+            {html && <HtmlView html={html} />}
           </View>
         )}
 
@@ -258,15 +249,31 @@ export default function Player() {
           </View>
         </View>
 
+        {/* ── speed slider panel ── */}
+        {speedOpen && (
+          <View style={[s.speedPanel, { backgroundColor: dark ? P.card : C.white }, SHADOW.float as object]}>
+            <SpeedSlider
+              value={Math.round(speed * 10) / 10}
+              onChange={(v) => setSpeed(v)}
+              colors={{ accent: T.accent, track: T.track, txt: T.txt, mut: T.mut }}
+            />
+          </View>
+        )}
+
         {/* ── transport ── */}
         <View style={s.controls}>
-          <Pressable onPress={cycleSpeed} style={[s.pill, { borderColor: T.border }]}>
-            <Text style={[s.pillTxt, { color: T.txt }]}>{speed}x</Text>
+          <Pressable
+            onPress={() => setSpeedOpen((v) => !v)}
+            style={[s.pill, { borderColor: T.border }, speedOpen && { backgroundColor: T.accent, borderColor: T.accent }]}
+          >
+            <Text style={[s.pillTxt, { color: speedOpen ? T.accentTxt : T.txt }]}>
+              {(Math.round(speed * 10) / 10).toFixed(1)}×
+            </Text>
           </Pressable>
 
-          <Pressable onPress={() => skip(-10)} style={s.skipWrap} hitSlop={8}>
+          <Pressable onPress={() => skip(-15)} style={s.skipWrap} hitSlop={8}>
             <Text style={[s.skipArc, { color: T.txt }]}>↺</Text>
-            <Text style={[s.skipNum, { color: T.mut }]}>10</Text>
+            <Text style={[s.skipNum, { color: T.mut }]}>15</Text>
           </Pressable>
 
           <Pressable onPressIn={() => springPlay(0.9)} onPressOut={() => springPlay(1)} onPress={togglePlay} disabled={generating}>
@@ -277,9 +284,9 @@ export default function Player() {
             </Animated.View>
           </Pressable>
 
-          <Pressable onPress={() => skip(10)} style={s.skipWrap} hitSlop={8}>
+          <Pressable onPress={() => skip(15)} style={s.skipWrap} hitSlop={8}>
             <Text style={[s.skipArc, { color: T.txt }]}>↻</Text>
-            <Text style={[s.skipNum, { color: T.mut }]}>10</Text>
+            <Text style={[s.skipNum, { color: T.mut }]}>15</Text>
           </Pressable>
 
           <Pressable onPress={() => setMode(mode === "read" ? "player" : "read")} style={[s.pill, { borderColor: T.border }, mode === "read" && { backgroundColor: T.accent, borderColor: T.accent }]}>
@@ -351,6 +358,10 @@ const s = StyleSheet.create({
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 30, paddingVertical: 18,
+  },
+  speedPanel: {
+    marginHorizontal: 26, marginTop: 10,
+    borderRadius: RADIUS.card, padding: 16,
   },
   pill: {
     minWidth: 54, height: 36, borderRadius: RADIUS.pill,

@@ -122,11 +122,20 @@ export const usePlayer = create<PlayerState>((set, get) => ({
       duration: episode.audio_duration_s,
       playbackPosition: same ? get().playbackPosition : episode.playback_position_s ?? 0,
     });
-    await AudioService.load(episode.audio_url, {
-      positionS: same ? get().playbackPosition : episode.playback_position_s ?? 0,
-      rate: get().speed,
-      autoplay: true,
-    });
+    await AudioService.load(
+      episode.audio_url,
+      {
+        positionS: same ? get().playbackPosition : episode.playback_position_s ?? 0,
+        rate: get().speed,
+        autoplay: true,
+      },
+      // Lock-screen / notification card metadata
+      {
+        title: episode.subject,
+        artist: episode.sender_name,
+        artworkUrl: episode.sender_logo_url,
+      }
+    );
   },
 
   resume: async () => {

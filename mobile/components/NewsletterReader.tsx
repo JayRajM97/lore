@@ -1,14 +1,14 @@
-import { createElement, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import HtmlView from "./HtmlView";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C, RADIUS, SERIF, SHADOW } from "../lib/theme";
 import { CONTENT } from "../lib/responsive";
@@ -70,17 +70,10 @@ function Block({ block }: { block: ContentBlock }) {
   }
 }
 
-// Web-only raw-HTML frame for the "original" mode. Sandboxed with no script
-// execution; same-origin so inline CSS + images render like the real email.
+// Raw-HTML view for the "original" mode: sandboxed iframe on web, WebView on
+// native (see components/HtmlView*).
 function OriginalFrame({ html }: { html: string }) {
-  if (Platform.OS !== "web") {
-    return <Text style={s.notice}>The original email view is available on the web app.</Text>;
-  }
-  return createElement("iframe", {
-    srcDoc: html,
-    sandbox: "allow-same-origin allow-popups",
-    style: { width: "100%", height: "100%", border: "none", background: "#fff" },
-  });
+  return <HtmlView html={html} />;
 }
 
 export default function NewsletterReader({

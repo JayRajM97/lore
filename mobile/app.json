@@ -12,6 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.jayraj.lore",
       "infoPlist": {
+        "UIBackgroundModes": ["audio"],
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
