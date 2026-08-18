@@ -11,6 +11,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jayraj.lore",
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.jayraj.lore"]
+      },
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -38,7 +41,8 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      ["@bacons/apple-targets", { "appleTeamId": "HSVB2Q4W33" }]
     ],
     "experiments": {
       "typedRoutes": false

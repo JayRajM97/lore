@@ -6,6 +6,7 @@ import { trackPlay } from "../lib/discovery";
 import { synthesizeForEpisode } from "../lib/tts";
 import { saveEpisodes } from "../lib/db";
 import { setProgress } from "../lib/progress";
+import { recordWidgetPlay } from "../lib/widget";
 import { useAuth } from "./authStore";
 
 interface PlayerState {
@@ -117,7 +118,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
     // Global play_count: count a genuine new play, not a resume of the same ep.
     // episode.id == episode_hash for shared-audio episodes; no-ops otherwise.
-    if (!same) trackPlay(episode.id);
+    if (!same) {
+      trackPlay(episode.id);
+      recordWidgetPlay(episode); // home-screen widget "recently played"
+    }
     set({
       currentEpisode: episode,
       duration: episode.audio_duration_s,
