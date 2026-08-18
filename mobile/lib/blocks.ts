@@ -39,7 +39,34 @@ const FOOTER_MARKERS = [
   /update your (email )?preferences/i,
   /manage your subscription/i,
   /add us to your address book/i,
+  // End-of-content signals — the narration should stop when the author signs
+  // off, not read the referral/rating/job-board tail.
+  /\bthat'?s (all|it) for (today|this week|now)\b/i,
+  /\bsee you (next|tomorrow|on)\b/i,
+  /\buntil next (time|week|issue)\b/i,
+  /\bthanks for reading\b/i,
+  /\bshare (this|the) newsletter\b/i,
+  /\brefer a friend\b/i,
+  /\breferral (program|link|count)\b/i,
+  /\bhow did (we|you like|you enjoy)\b.*(email|issue|edition|newsletter)/i,
+  /\brate (this|today'?s) (issue|email|newsletter)\b/i,
+  /\breply to this email\b/i,
+  /\bjob board\b/i,
+  /\badvertise (with us|in|here)\b/i,
+  /\bsponsor (this|the) newsletter\b/i,
+  /\bwhat did you think of\b/i,
+  /\benjoyed this (issue|email|edition)\b/i,
 ];
+
+// Standalone call-to-action lines ("Start your free trial →", "Shop now"):
+// short, imperative, no sentence structure — ad furniture, not content.
+const CTA_LINE =
+  /^(•\s*)?(shop|buy|try|get|grab|claim|unlock|upgrade|subscribe|sign up|join|start|download|order|book|redeem|save \d|learn more|read more|find out|discover|explore|check out|see (deals|plans|pricing))\b/i;
+
+function isCtaLine(text: string): boolean {
+  const words = text.trim().split(/\s+/).length;
+  return words <= 10 && CTA_LINE.test(text.trim()) && !/[.!?]\s+\S/.test(text);
+}
 
 function looksLikeFooter(text: string): boolean {
   return FOOTER_MARKERS.some((m) => m.test(text));
@@ -52,7 +79,7 @@ function looksLikeFooter(text: string): boolean {
 //     drops the whole section until the next heading;
 //   - a strongly ad-marked TEXT block drops just that block.
 const SPONSOR_STRONG =
-  /\b(today'?s (sponsor|newsletter is brought to you by)|sponsored by|this (issue|email|edition) is sponsored|brought to you by|presented by|in partnership with|thanks to (our|today'?s) (sponsor|partner)|a message from our (sponsor|partner)|paid promotion|partner message|advertisement\b|\bpromoted\b)/i;
+  /\b(today'?s (sponsor|newsletter is brought to you by)|sponsored( by| content| post)?\b|this (issue|email|edition) is sponsored|brought to you by|presented by|in partnership with|thanks to (our|today'?s) (sponsor|partner)|a message from (our )?(sponsor|partner)|paid (promotion|post|partnership)|partner (message|content)|advertisement\b|\bpromoted\b|from our partners?\b|use (code|promo)\b|\bpromo code\b|\d+% off\b|limited[- ]time (offer|deal)|exclusive (offer|discount) for)/i;
 // "Together with X" is the classic sponsor-header pattern, but only trust it in
 // short heading-like lines to avoid nuking prose that happens to use the phrase.
 const SPONSOR_HEADING = /^(together with|sponsored?( by)?|a word from|from our (sponsor|partner)s?)\b/i;
@@ -103,6 +130,14 @@ function parseWithDom(html: string): ContentBlock[] {
     if (el.querySelector(SEL)) return;
     const text = (el.textContent || "").replace(/\s+/g, " ").trim();
     if (!text) return;
+    // Link-density: ad/CTA blocks are mostly anchor text ("Try Vanta free →",
+    // sponsor cards, button rows). Prose paragraphs rarely exceed ~50% links.
+    if (tag === "p" || tag === "li") {
+      let linkLen = 0;
+      el.querySelectorAll("a").forEach((a) => { linkLen += (a.textContent || "").trim().length; });
+      const words = text.split(/\s+/).length;
+      if (words >= 3 && linkLen / Math.max(text.length, 1) > 0.6) return;
+    }
     const kind = tagKind(tag)!;
     out.push({ type: kind, text: kind === "text" && tag === "li" ? `• ${text}` : text } as ContentBlock);
   });
@@ -154,24 +189,27 @@ export function buildContent(html: string): Content {
   const kept: ContentBlock[] = [];
   let words = 0;
   let inSponsorSection = false;
+  let lastDropWasAd = false;
 
   for (const b of raw) {
     // Sponsor section: a sponsor heading mutes everything until the next
     // (non-sponsor) heading; images inside the section drop with it.
     if (b.type === "heading") {
       inSponsorSection = isSponsorHeading(b.text);
-      if (inSponsorSection) continue;
+      if (inSponsorSection) { lastDropWasAd = true; continue; }
     } else if (inSponsorSection) {
       continue;
     }
 
     if (b.type === "image") {
-      if (kept.length > 0) kept.push(b); // skip leading images
+      // An image right after a dropped ad block is the ad's creative — skip it.
+      if (kept.length > 0 && !lastDropWasAd) kept.push(b);
       continue;
     }
     const cleaned = cleanProse(b.text);
     if (!cleaned) continue;
-    if (isSponsorText(cleaned)) continue; // standalone ad block
+    if (isSponsorText(cleaned) || isCtaLine(cleaned)) { lastDropWasAd = true; continue; }
+    lastDropWasAd = false;
     if (words > 40 && looksLikeFooter(cleaned)) break; // stop at footer
 
     const bw = cleaned.split(/\s+/).filter(Boolean).length;

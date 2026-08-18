@@ -2,11 +2,12 @@ import { useEffect, useRef } from "react";
 import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { usePlayer } from "../store/playerStore";
-import { C, P, RADIUS, SHADOW } from "../lib/theme";
+import { P, RADIUS, SHADOW } from "../lib/theme";
 import Avatar from "./Avatar";
 
-// Spotify-style floating bar: dark rounded card hovering above the tab bar,
-// with a live progress hairline along its bottom edge.
+// Spotify-style now-playing bar: slim dark card docked above the tab bar —
+// artwork left, title/artist stacked, bare play/pause glyph right, and a
+// hairline progress line hugging the bottom edge.
 export default function MiniPlayer() {
   const router = useRouter();
   const { currentEpisode, isPlaying, playbackPosition, duration, speed, generating, togglePlay } = usePlayer();
@@ -38,7 +39,6 @@ export default function MiniPlayer() {
     return () => cancelAnimationFrame(raf);
   }, [!!currentEpisode, duration, isPlaying, speed]);
 
-  // play button press-spring
   const btnScale = useRef(new Animated.Value(1)).current;
   const spring = (v: number) =>
     Animated.spring(btnScale, { toValue: v, useNativeDriver: false, speed: 40, bounciness: 6 }).start();
@@ -57,7 +57,7 @@ export default function MiniPlayer() {
     >
       <Pressable style={styles.card} onPress={() => router.push("/player")}>
         <View style={styles.row}>
-          <Avatar name={currentEpisode.sender_name} url={currentEpisode.sender_logo_url} size={38} />
+          <Avatar name={currentEpisode.sender_name} url={currentEpisode.sender_logo_url} size={40} />
           <View style={styles.center}>
             <Text style={styles.title} numberOfLines={1}>
               {currentEpisode.subject}
@@ -68,18 +68,20 @@ export default function MiniPlayer() {
           </View>
           <Pressable
             onPress={(e) => { e.stopPropagation(); togglePlay(); }}
-            onPressIn={() => spring(0.88)}
+            onPressIn={() => spring(0.8)}
             onPressOut={() => spring(1)}
-            hitSlop={10}
+            hitSlop={12}
+            style={styles.btnHit}
+            disabled={generating}
           >
-            <Animated.View style={[styles.btn, { transform: [{ scale: btnScale }] }]}>
+            <Animated.View style={{ transform: [{ scale: btnScale }] }}>
               {generating
-                ? <ActivityIndicator size="small" color="#04120A" />
+                ? <ActivityIndicator size="small" color={P.txt} />
                 : <Text style={styles.icon}>{isPlaying ? "❚❚" : "▶"}</Text>}
             </Animated.View>
           </Pressable>
         </View>
-        {/* progress hairline */}
+        {/* progress hairline hugging the bottom edge */}
         <View style={styles.track}>
           <Animated.View
             style={[styles.fill, {
@@ -93,32 +95,26 @@ export default function MiniPlayer() {
 }
 
 const styles = StyleSheet.create({
-  outer: { paddingHorizontal: 10, paddingBottom: 6 },
+  outer: { paddingHorizontal: 8, paddingBottom: 5 },
   card: {
     backgroundColor: P.card,
-    borderRadius: RADIUS.btn,
+    borderRadius: RADIUS.chip,
     overflow: "hidden",
     ...(SHADOW.float as object),
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    gap: 11,
+    paddingLeft: 8,
+    paddingRight: 16,
+    paddingVertical: 8,
   },
   center: { flex: 1 },
   title: { fontSize: 13.5, fontWeight: "600", color: P.txt },
-  sender: { fontSize: 11.5, color: P.txtMid, marginTop: 1 },
-  btn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: P.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  icon: { color: "#04120A", fontSize: 14 },
-  track: { height: 2.5, backgroundColor: "rgba(255,255,255,0.1)" },
-  fill: { height: 2.5, backgroundColor: P.accent },
+  sender: { fontSize: 12, color: P.txtMid, marginTop: 1.5 },
+  btnHit: { width: 34, alignItems: "center", justifyContent: "center" },
+  icon: { color: P.txt, fontSize: 18 },
+  track: { position: "absolute", left: 8, right: 8, bottom: 0, height: 2, backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 1 },
+  fill: { height: 2, backgroundColor: P.accent, borderRadius: 1 },
 });

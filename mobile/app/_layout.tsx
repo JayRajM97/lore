@@ -29,8 +29,9 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="player" options={{ presentation: "modal" }} />
-        <Stack.Screen name="newsletter/[id]" />
+        {/* Full-screen push (not a sheet) — the player owns the whole screen
+            and provides its own back button. */}
+        <Stack.Screen name="player" options={{ presentation: "card", animation: "slide_from_right" }} />
         <Stack.Screen name="playground" options={{ presentation: "modal" }} />
       </Stack>
     </SafeAreaProvider>

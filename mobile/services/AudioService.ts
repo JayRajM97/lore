@@ -115,6 +115,11 @@ class AudioServiceImpl {
       return;
     }
     await TrackPlayer.reset();
+    // Kill the previous track's position/duration NOW — otherwise the first
+    // status emit after switching episodes reports the old track's seek.
+    this.lastPos = opts?.positionS ?? 0;
+    this.lastDur = 0;
+    this.lastPlaying = false;
     await TrackPlayer.add({
       url,
       title: meta?.title ?? "Lore episode",
@@ -122,6 +127,7 @@ class AudioServiceImpl {
       artwork: meta?.artworkUrl ?? undefined,
     });
     this.currentUrl = url;
+    this.emit(false);
     if (opts?.positionS && opts.positionS > 0) await TrackPlayer.seekTo(opts.positionS);
     if (opts?.rate && opts.rate !== 1) await TrackPlayer.setRate(opts.rate);
     if (opts?.autoplay ?? true) await TrackPlayer.play();

@@ -152,8 +152,8 @@ export default function Player() {
         <SafeAreaView edges={["top"]} style={{ backgroundColor: T.bg }}>
           {/* ── top bar: close · mode segments · theme ── */}
           <View style={s.topBar}>
-            <Pressable onPress={() => router.back()} style={[s.iconCircle, { backgroundColor: T.surface }]} hitSlop={8}>
-              <Text style={[s.chevron, { color: T.txt }]}>⌄</Text>
+            <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace("/home"))} style={[s.iconCircle, { backgroundColor: T.surface }]} hitSlop={8}>
+              <Text style={[s.backArrow, { color: T.txt }]}>‹</Text>
             </Pressable>
 
             <View style={[s.segments, { backgroundColor: T.segBg }]}>
@@ -312,7 +312,7 @@ const s = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     alignItems: "center", justifyContent: "center",
   },
-  chevron: { fontSize: 22, lineHeight: 24, marginTop: 2 },
+  backArrow: { fontSize: 26, lineHeight: 28, marginTop: -2, fontWeight: "600" },
   themeIcon: { fontSize: 15 },
 
   segments: { flexDirection: "row", borderRadius: RADIUS.pill, padding: 3, gap: 2 },

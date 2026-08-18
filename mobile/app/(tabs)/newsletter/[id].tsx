@@ -2,15 +2,15 @@ import { useEffect, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { C, RADIUS, SERIF } from "../../lib/theme";
-import { getEpisodes, getFollows, saveFollows, unfollow } from "../../lib/db";
-import { Episode, Newsletter } from "../../lib/types";
-import { useAuth } from "../../store/authStore";
-import { usePlayer } from "../../store/playerStore";
-import Avatar from "../../components/Avatar";
-import FrequencyBadge from "../../components/FrequencyBadge";
-import EpisodeCard from "../../components/EpisodeCard";
-import { FadeInUp, PressableScale } from "../../components/anim";
+import { C, RADIUS, SERIF } from "../../../lib/theme";
+import { getEpisodes, getFollows, saveFollows, unfollow } from "../../../lib/db";
+import { Episode, Newsletter } from "../../../lib/types";
+import { useAuth } from "../../../store/authStore";
+import { usePlayer } from "../../../store/playerStore";
+import Avatar from "../../../components/Avatar";
+import FrequencyBadge from "../../../components/FrequencyBadge";
+import EpisodeCard from "../../../components/EpisodeCard";
+import { FadeInUp, PressableScale } from "../../../components/anim";
 
 export default function NewsletterDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
