@@ -197,7 +197,8 @@ struct LoreWidgetView: View {
           Text(minutes(eps[0].durationS).map { "\(eps[0].sender) · \($0)" } ?? eps[0].sender)
             .font(.system(size: 10, weight: .medium))
             .foregroundColor(txtDim)
-            .lineLimit(1)
+            .lineLimit(2)
+            .padding(.bottom, 5) // keep clear of the curved corner
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       } else {
