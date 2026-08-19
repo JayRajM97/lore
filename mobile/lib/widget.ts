@@ -17,12 +17,18 @@ interface WidgetEpisode {
   id: string;
   title: string;
   sender: string;
+  durationS?: number;
 }
 
 let list: WidgetEpisode[] = [];
 
 function toEntry(e: Episode): WidgetEpisode {
-  return { id: e.id, title: e.subject, sender: e.sender_name };
+  return {
+    id: e.id,
+    title: e.subject,
+    sender: e.sender_name,
+    durationS: Math.round(e.audio_duration_s || 0),
+  };
 }
 
 function write() {
