@@ -121,6 +121,15 @@ func playURL(_ ep: WidgetEpisode) -> URL {
   URL(string: "lore://play?id=\(ep.id)") ?? URL(string: "lore://home")!
 }
 
+// "Sender · 11 min" with the minutes bolded (and brightened) for scanability.
+func metaLine(_ ep: WidgetEpisode) -> Text {
+  if let m = minutes(ep.durationS) {
+    return Text("\(ep.sender) · ")
+      + Text(m).fontWeight(.heavy).foregroundColor(.white.opacity(0.85))
+  }
+  return Text(ep.sender)
+}
+
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
 // Real sender logo when downloaded; the app's two-tone monogram otherwise.
@@ -181,7 +190,7 @@ struct EpisodeRow: View {
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.white)
           .lineLimit(2)
-        Text(minutes(ep.durationS).map { "\(ep.sender) · \($0)" } ?? ep.sender)
+        metaLine(ep)
           .font(.system(size: 9.5))
           .foregroundColor(txtDim)
           .lineLimit(1)
@@ -226,12 +235,12 @@ struct LoreWidgetView: View {
             }
           }
           Text(eps[0].title)
-            .font(.system(size: 16, weight: .bold))
+            .font(.system(size: 13.5, weight: .bold))
             .foregroundColor(.white)
             .lineLimit(3)
-            .minimumScaleFactor(0.85)
+            .minimumScaleFactor(0.9)
             .frame(maxHeight: .infinity, alignment: .top)
-          Text(minutes(eps[0].durationS).map { "\(eps[0].sender) · \($0)" } ?? eps[0].sender)
+          metaLine(eps[0])
             .font(.system(size: 10, weight: .medium))
             .foregroundColor(txtDim)
             .lineLimit(2)
