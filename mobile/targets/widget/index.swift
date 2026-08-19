@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 
 // ── Shared state written by the app (lib/widget.ts via App Group) ───────────
 
@@ -8,6 +9,7 @@ struct WidgetEpisode: Codable, Identifiable {
   let title: String
   let sender: String
   let durationS: Int?
+  let logo: String?
 }
 
 struct WidgetState: Codable {
@@ -31,23 +33,37 @@ func readState() -> WidgetState {
 struct LoreEntry: TimelineEntry {
   let date: Date
   let state: WidgetState
+  let logos: [String: UIImage] // episode id -> downloaded sender logo
+}
+
+func fetchLogos(for episodes: [WidgetEpisode]) -> [String: UIImage] {
+  var out: [String: UIImage] = [:]
+  for ep in episodes.prefix(3) {
+    if let logo = ep.logo, let url = URL(string: logo), url.scheme == "https",
+       let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
+      out[ep.id] = img
+    }
+  }
+  return out
 }
 
 struct LoreProvider: TimelineProvider {
   func placeholder(in context: Context) -> LoreEntry {
     LoreEntry(date: Date(), state: WidgetState(
       episodes: [
-        WidgetEpisode(id: "p1", title: "A Japanese Ritual to Improve Your Habits", sender: "Sahil Bloom", durationS: 660),
-        WidgetEpisode(id: "p2", title: "How top PMs increase their leverage with AI", sender: "Lenny's Newsletter", durationS: 1020),
+        WidgetEpisode(id: "p1", title: "A Japanese Ritual to Improve Your Habits", sender: "Sahil Bloom", durationS: 660, logo: nil),
+        WidgetEpisode(id: "p2", title: "How top PMs increase their leverage with AI", sender: "Lenny's Newsletter", durationS: 1020, logo: nil),
       ],
       updatedAt: 0
-    ))
+    ), logos: [:])
   }
   func getSnapshot(in context: Context, completion: @escaping (LoreEntry) -> Void) {
-    completion(LoreEntry(date: Date(), state: readState()))
+    let state = readState()
+    completion(LoreEntry(date: Date(), state: state, logos: fetchLogos(for: state.episodes)))
   }
   func getTimeline(in context: Context, completion: @escaping (Timeline<LoreEntry>) -> Void) {
-    let entry = LoreEntry(date: Date(), state: readState())
+    let state = readState()
+    let entry = LoreEntry(date: Date(), state: state, logos: fetchLogos(for: state.episodes))
     // App reloads timelines on every play/seed; hourly refresh is a fallback.
     completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(3600))))
   }
@@ -75,7 +91,7 @@ let cardGradient = LinearGradient(
 )
 
 // Deterministic per-sender cover colors — same palette + hash as the app's
-// CoverArt component, so widget tiles match in-app artwork.
+// CoverArt component (fallback when a real logo isn't available).
 let coverPalette: [(UInt32, UInt32)] = [
   (0x0F6E56, 0x0A3D2B), (0x534AB7, 0x2E2870), (0xD85A30, 0x8F3417),
   (0xBA7517, 0x7A4A0C), (0x1E6091, 0x0F3B5C), (0x7B2D8E, 0x4A1657),
@@ -101,25 +117,41 @@ func minutes(_ s: Int?) -> String? {
   return "\(max(1, s / 60)) min"
 }
 
+func playURL(_ ep: WidgetEpisode) -> URL {
+  URL(string: "lore://play?id=\(ep.id)") ?? URL(string: "lore://home")!
+}
+
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
-// The app's two-tone cover: base color + offset deeper disc + initials.
+// Real sender logo when downloaded; the app's two-tone monogram otherwise.
 struct CoverTile: View {
   let sender: String
   let size: CGFloat
+  let image: UIImage?
+
   var body: some View {
-    let (base, deep) = coverColors(sender)
-    ZStack {
-      RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).fill(base)
-      Circle()
-        .fill(deep.opacity(0.7))
-        .frame(width: size * 0.85, height: size * 0.85)
-        .offset(x: size * 0.28, y: size * 0.28)
-      Text(initials(sender))
-        .font(.system(size: size * 0.34, weight: .heavy))
-        .foregroundColor(.white)
+    Group {
+      if let image = image {
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFill()
+          .frame(width: size, height: size)
+          .background(Color.white)
+      } else {
+        let (base, deep) = coverColors(sender)
+        ZStack {
+          RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).fill(base)
+          Circle()
+            .fill(deep.opacity(0.7))
+            .frame(width: size * 0.85, height: size * 0.85)
+            .offset(x: size * 0.28, y: size * 0.28)
+          Text(initials(sender))
+            .font(.system(size: size * 0.34, weight: .heavy))
+            .foregroundColor(.white)
+        }
+        .frame(width: size, height: size)
+      }
     }
-    .frame(width: size, height: size)
     .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
   }
 }
@@ -140,9 +172,10 @@ struct PlayCircle: View {
 
 struct EpisodeRow: View {
   let ep: WidgetEpisode
+  let logo: UIImage?
   var body: some View {
     HStack(spacing: 9) {
-      CoverTile(sender: ep.sender, size: 38)
+      CoverTile(sender: ep.sender, size: 38, image: logo)
       VStack(alignment: .leading, spacing: 2) {
         Text(ep.title)
           .font(.system(size: 12, weight: .semibold))
@@ -154,7 +187,9 @@ struct EpisodeRow: View {
           .lineLimit(1)
       }
       Spacer(minLength: 0)
-      PlayCircle(size: 26)
+      Link(destination: playURL(ep)) {
+        PlayCircle(size: 26)
+      }
     }
   }
 }
@@ -181,12 +216,14 @@ struct LoreWidgetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if family == .systemSmall {
-        // Row 1: small sender tile + play button. Rest: title fills the card.
+        // Row 1: sender tile + play. Middle: title. Bottom: 2-line sender.
         VStack(alignment: .leading, spacing: 7) {
           HStack(alignment: .center) {
-            CoverTile(sender: eps[0].sender, size: 32)
+            CoverTile(sender: eps[0].sender, size: 32, image: entry.logos[eps[0].id])
             Spacer()
-            PlayCircle(size: 36)
+            Link(destination: playURL(eps[0])) {
+              PlayCircle(size: 36)
+            }
           }
           Text(eps[0].title)
             .font(.system(size: 16, weight: .bold))
@@ -202,8 +239,8 @@ struct LoreWidgetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       } else {
-        // Apple-Podcasts-style: header + two rows.
-        VStack(alignment: .leading, spacing: 9) {
+        // Header + two rows, centered vertically in the card.
+        VStack(alignment: .leading, spacing: 10) {
           HStack {
             Text("UP NEXT ON LORE")
               .font(.system(size: 9.5, weight: .heavy))
@@ -215,11 +252,10 @@ struct LoreWidgetView: View {
               .foregroundColor(txtDim)
           }
           ForEach(eps.prefix(2)) { ep in
-            EpisodeRow(ep: ep)
+            EpisodeRow(ep: ep, logo: entry.logos[ep.id])
           }
-          Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       }
     }
     .padding(family == .systemSmall ? 10 : 12)

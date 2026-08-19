@@ -18,6 +18,7 @@ interface WidgetEpisode {
   title: string;
   sender: string;
   durationS?: number;
+  logo?: string | null;
 }
 
 let list: WidgetEpisode[] = [];
@@ -28,6 +29,7 @@ function toEntry(e: Episode): WidgetEpisode {
     title: e.subject,
     sender: e.sender_name,
     durationS: Math.round(e.audio_duration_s || 0),
+    logo: e.sender_logo_url ?? null,
   };
 }
 
