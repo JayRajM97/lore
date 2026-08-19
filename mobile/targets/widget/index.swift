@@ -182,20 +182,20 @@ struct LoreWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if family == .systemSmall {
         // Row 1: small sender tile + play button. Rest: title fills the card.
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
           HStack(alignment: .center) {
-            CoverTile(sender: eps[0].sender, size: 28)
+            CoverTile(sender: eps[0].sender, size: 32)
             Spacer()
-            PlayCircle(size: 30)
+            PlayCircle(size: 36)
           }
           Text(eps[0].title)
-            .font(.system(size: 14.5, weight: .bold))
+            .font(.system(size: 16, weight: .bold))
             .foregroundColor(.white)
             .lineLimit(3)
-            .minimumScaleFactor(0.9)
+            .minimumScaleFactor(0.85)
             .frame(maxHeight: .infinity, alignment: .top)
           Text(minutes(eps[0].durationS).map { "\(eps[0].sender) · \($0)" } ?? eps[0].sender)
-            .font(.system(size: 9.5, weight: .medium))
+            .font(.system(size: 10, weight: .medium))
             .foregroundColor(txtDim)
             .lineLimit(1)
         }
@@ -221,7 +221,7 @@ struct LoreWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       }
     }
-    .padding(family == .systemSmall ? 11 : 13)
+    .padding(family == .systemSmall ? 10 : 12)
     .containerBackground(cardGradient, for: .widget)
     .widgetURL(URL(string: "lore://home"))
   }
@@ -237,6 +237,8 @@ struct LoreWidget: Widget {
     .configurationDisplayName("Lore — Up Next")
     .description("Your latest newsletter episodes, ready to play.")
     .supportedFamilies([.systemSmall, .systemMedium])
+    // Kill the ~16pt system content margins — we control our own padding.
+    .contentMarginsDisabled()
   }
 }
 
