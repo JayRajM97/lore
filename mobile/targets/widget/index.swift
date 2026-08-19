@@ -181,28 +181,23 @@ struct LoreWidgetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if family == .systemSmall {
-        // Audible-style: cover top, bold title, play + duration bottom.
-        VStack(alignment: .leading, spacing: 8) {
-          HStack(alignment: .top) {
-            CoverTile(sender: eps[0].sender, size: 40)
+        // Row 1: small sender tile + play button. Rest: title fills the card.
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(alignment: .center) {
+            CoverTile(sender: eps[0].sender, size: 28)
             Spacer()
-            Image(systemName: "headphones")
-              .font(.system(size: 12, weight: .semibold))
-              .foregroundColor(accentGreen)
+            PlayCircle(size: 30)
           }
           Text(eps[0].title)
-            .font(.system(size: 13, weight: .bold))
+            .font(.system(size: 14.5, weight: .bold))
             .foregroundColor(.white)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-          Spacer(minLength: 0)
-          HStack(spacing: 7) {
-            PlayCircle(size: 28)
-            if let m = minutes(eps[0].durationS) {
-              Text(m).font(.system(size: 11, weight: .semibold)).foregroundColor(txtDim)
-            }
-            Spacer()
-          }
+            .lineLimit(3)
+            .minimumScaleFactor(0.9)
+            .frame(maxHeight: .infinity, alignment: .top)
+          Text(minutes(eps[0].durationS).map { "\(eps[0].sender) · \($0)" } ?? eps[0].sender)
+            .font(.system(size: 9.5, weight: .medium))
+            .foregroundColor(txtDim)
+            .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       } else {
@@ -226,7 +221,7 @@ struct LoreWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       }
     }
-    .padding(13)
+    .padding(family == .systemSmall ? 11 : 13)
     .containerBackground(cardGradient, for: .widget)
     .widgetURL(URL(string: "lore://home"))
   }
