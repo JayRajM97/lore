@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { C, RADIUS, SERIF, SHADOW } from "../../lib/theme";
 import { useAuth } from "../../store/authStore";
+import { getSessionDiagnostics } from "../../lib/session";
 import { getFollows, unfollow } from "../../lib/db";
 import { Newsletter } from "../../lib/types";
 import Avatar from "../../components/Avatar";
@@ -67,6 +68,10 @@ export default function Profile() {
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={styles.name}>{user.name}</Text>
               <Text style={styles.email}>{user.email}</Text>
+              <Text style={styles.sessionDebug}>
+                session: {getSessionDiagnostics().source}
+                {getSessionDiagnostics().errors.length > 0 ? ` · ${getSessionDiagnostics().errors[0]}` : ""}
+              </Text>
             </View>
           </View>
 
@@ -136,6 +141,7 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 18, fontWeight: "700", color: C.ink },
   email: { fontSize: 13, color: C.muted },
+  sessionDebug: { fontSize: 10, color: C.border, marginTop: 2 },
 
   expiredBanner: {
     backgroundColor: C.amber50, borderRadius: RADIUS.btn,

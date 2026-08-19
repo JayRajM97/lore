@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as WebBrowser from "expo-web-browser";
 import { usePlayer } from "../store/playerStore";
+import { useAuth } from "../store/authStore";
 import { C } from "../lib/theme";
 
 // Must be called on EVERY page load — including when Google redirects the OAuth
@@ -13,9 +14,14 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function RootLayout() {
   const init = usePlayer((s) => s.init);
+  const restore = useAuth((s) => s.restore);
   useEffect(() => {
     init();
-  }, [init]);
+    // Restore the session on EVERY entry path — deep links (widget taps open
+    // lore://home) bypass the index splash, which used to be the only place
+    // restore ran, making the app look signed-out.
+    restore().catch(() => {});
+  }, [init, restore]);
 
   return (
     <SafeAreaProvider>
