@@ -214,7 +214,7 @@ export async function fetchRecentEmails(
         // Structured path: parse HTML once into ordered blocks, and derive the
         // spoken text + display script from that same model so audio and the
         // on-screen reader stay in lockstep.
-        const content = htmlRaw ? buildContent(htmlRaw) : null;
+        const content = htmlRaw ? buildContent(htmlRaw, subject) : null;
         const plain = plainRaw ? cutFooter(cleanProse(plainRaw)) : "";
 
         // Prefer the structured spoken text; fall back to text/plain when the
